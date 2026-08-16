@@ -17,7 +17,12 @@ const interTight = Inter_Tight({
 });
 
 export const metadata: Metadata = {
-  title: 'Gitsy: learn Git by playing it',
+  // Placeholder origin until a deploy domain exists (DECISIONS.md, Phase 8).
+  metadataBase: new URL('https://gitsy.dev'),
+  title: {
+    default: 'Gitsy: learn Git by playing it',
+    template: '%s · Gitsy',
+  },
   description:
     'A browser game that takes you from total beginner to Git expert. Real Git engine, real terminal, zero installs.',
 };
