@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { Inter_Tight, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 
-// §4: JetBrains Mono is the protagonist (terminal, data, refs).
-// Inter Tight is prose/UI chrome only.
+// Section 4: JetBrains Mono is the protagonist (terminal, data, refs).
+// Inter Tight is prose and UI chrome only.
 const jbMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-jbmono',
@@ -17,7 +17,7 @@ const interTight = Inter_Tight({
 });
 
 export const metadata: Metadata = {
-  title: 'Gitsy — learn Git by playing it',
+  title: 'Gitsy: learn Git by playing it',
   description:
     'A browser game that takes you from total beginner to Git expert. Real Git engine, real terminal, zero installs.',
 };

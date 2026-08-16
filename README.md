@@ -1,8 +1,8 @@
 # Gitsy
 
-Learn Git by playing it — a browser game with a real Git engine and a real terminal.
+Learn Git by playing it: a browser game with a real Git engine and a real terminal.
 
-- **Spec:** [BUILD-PLAN.md](./BUILD-PLAN.md) — sections 1–4 are frozen contracts
+- **Spec:** [BUILD-PLAN.md](./BUILD-PLAN.md). Sections 1-4 are frozen contracts.
 - **Rules for agents:** [AGENTS.md](./AGENTS.md)
 - **Decision log:** [DECISIONS.md](./DECISIONS.md)
 

@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
-/* ── Design tokens (BUILD-PLAN §4) ────────────────────────────────
-   Drafting table, not arcade. Blueprint ground, hairline rules,
-   monospace as co-lead. Hue is reserved ENTIRELY for file state —
-   nothing is coloured for decoration.                              */
+/* Design tokens (BUILD-PLAN section 4).
+   Drafting table, not arcade. Blueprint ground, hairline rules, monospace as
+   co-lead. Hue is reserved ENTIRELY for file state: nothing is coloured for
+   decoration. */
 
 :root {
-  --ground:      #101A2B;   /* blueprint indigo — the canvas */
+  --ground:      #101A2B;   /* blueprint indigo, the canvas */
   --panel:       #16233A;
   --rule:        #2A3B57;   /* hairlines, 0.5px */
   --ink:         #DCE6F5;
   --ink-dim:     #7E93B5;
 
-  /* state colours — the ONLY use of hue in the app */
+  /* state colours: the ONLY use of hue in the app */
   --st-clean:    #7E93B5;
   --st-modified: #E0A94B;   /* brass */
   --st-staged:   #5BD6A0;   /* jade */
@@ -21,7 +21,7 @@
   --st-ghost:    #4A5C79;   /* abandoned / unreachable commits */
 }
 
-/* Expose the tokens as Tailwind utilities (bg-ground, text-st-head, …)
+/* Expose the tokens as Tailwind utilities (bg-ground, text-st-head, ...)
    while keeping the raw CSS vars as the single source of truth. */
 @theme inline {
   --color-ground: var(--ground);

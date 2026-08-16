@@ -1,8 +1,8 @@
 // src/core/types.ts
 //
-// THE CONTRACT (BUILD-PLAN §0, rule 1). Written once, deliberately, frozen.
-// Never regenerate. If a change is genuinely needed, edit by hand and note
-// why in DECISIONS.md.
+// THE CONTRACT (BUILD-PLAN section 0, rule 1). Written once, deliberately,
+// frozen. Never regenerate. If a change is genuinely needed, edit by hand and
+// note why in DECISIONS.md.
 
 /** Content-and-position identity for a commit. NOT a git SHA. */
 export type StructHash = string & { readonly __brand: 'StructHash' };
@@ -19,7 +19,7 @@ export interface FileEntry {
 
 export interface GameCommit {
   hash: StructHash;
-  sha: string;              // real git SHA — display only, never compared
+  sha: string;              // real git SHA: display only, never compared
   message: string;
   parents: StructHash[];
   tree: Record<string, string>;   // path → content
@@ -47,7 +47,7 @@ export interface RepoSnapshot {
 export interface CommandResult {
   ok: boolean;
   stdout: string;
-  stderr: string;           // real git error text — this is teaching material
+  stderr: string;           // real git error text: this is teaching material
   snapshot: RepoSnapshot;
 }
 
@@ -70,7 +70,7 @@ export interface Assertion {
 }
 
 export interface Diagnostic {
-  when: string;             // predicate key — fires when TRUE
+  when: string;             // predicate key: fires when TRUE
   args?: unknown[];
   say: string;
 }

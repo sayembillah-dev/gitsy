@@ -7,7 +7,7 @@ export default function LandingPage() {
       </h1>
       <p className="max-w-prose text-lg text-ink-dim">
         A real Git engine in your browser. A real terminal. No installs, no
-        accounts — just you, three trees, and a graph.
+        accounts. Just you, three trees, and a graph.
       </p>
       <a
         href="/play/test"
