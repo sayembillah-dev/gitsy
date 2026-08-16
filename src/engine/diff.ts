@@ -108,6 +108,103 @@ function hunks(oldLines: string[], newLines: string[]): string[] {
   return result;
 }
 
+/** A single hunk in appliable form: header plus ' '/'-'/'+' prefixed lines. */
+export interface PatchHunk {
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  header: string;
+  lines: string[];
+}
+
+/** Structured hunks between two file versions (used by `git add -p`). */
+export function computeHunks(oldContent: string, newContent: string): PatchHunk[] {
+  const oldLines = splitLines(oldContent);
+  const newLines = splitLines(newContent);
+  const ops = lcsOps(oldLines, newLines);
+
+  let oldNo = 0;
+  let newNo = 0;
+  const tagged = ops.map((op) => {
+    const t = { op, oldLine: 0, newLine: 0 };
+    if (op.type !== 'add') t.oldLine = ++oldNo;
+    if (op.type !== 'del') t.newLine = ++newNo;
+    return t;
+  });
+  const changeIdx = tagged
+    .map((t, idx) => (t.op.type === 'keep' ? -1 : idx))
+    .filter((x) => x >= 0);
+  if (changeIdx.length === 0) return [];
+
+  const groups: Array<[number, number]> = [];
+  let gStart = Math.max(0, changeIdx[0] - CONTEXT);
+  let gEnd = Math.min(tagged.length - 1, changeIdx[0] + CONTEXT);
+  for (let k = 1; k < changeIdx.length; k++) {
+    const c = changeIdx[k];
+    if (c - gEnd <= CONTEXT + 1) {
+      gEnd = Math.min(tagged.length - 1, c + CONTEXT);
+    } else {
+      groups.push([gStart, gEnd]);
+      gStart = Math.max(0, c - CONTEXT);
+      gEnd = Math.min(tagged.length - 1, c + CONTEXT);
+    }
+  }
+  groups.push([gStart, gEnd]);
+
+  return groups.map(([s, e]) => {
+    const slice = tagged.slice(s, e + 1);
+    const oldCount = slice.filter((t) => t.op.type !== 'add').length;
+    const newCount = slice.filter((t) => t.op.type !== 'del').length;
+    const oldStart = slice.find((t) => t.op.type !== 'add')?.oldLine ?? 0;
+    const newStart = slice.find((t) => t.op.type !== 'del')?.newLine ?? 0;
+    return {
+      oldStart,
+      oldCount,
+      newStart,
+      newCount,
+      header: `@@ -${range(oldStart, oldCount)} +${range(newStart, newCount)} @@`,
+      lines: slice.map(
+        (t) => (t.op.type === 'keep' ? ' ' : t.op.type === 'del' ? '-' : '+') + t.op.line,
+      ),
+    };
+  });
+}
+
+/**
+ * Applies the selected hunks (ascending oldStart order) to oldContent,
+ * producing the intermediate version `git add -p` would stage. Game files end
+ * with a trailing newline; that convention is preserved here.
+ */
+export function applyHunks(oldContent: string, selected: PatchHunk[]): string {
+  const oldLines = splitLines(oldContent);
+  const out: string[] = [];
+  let cursor = 0;
+  for (const h of [...selected].sort((a, b) => a.oldStart - b.oldStart)) {
+    const startIdx = h.oldStart === 0 ? 0 : h.oldStart - 1;
+    while (cursor < startIdx && cursor < oldLines.length) {
+      out.push(oldLines[cursor]);
+      cursor += 1;
+    }
+    for (const line of h.lines) {
+      const t = line.charAt(0);
+      if (t === ' ') {
+        out.push(oldLines[cursor]);
+        cursor += 1;
+      } else if (t === '-') {
+        cursor += 1;
+      } else {
+        out.push(line.slice(1));
+      }
+    }
+  }
+  while (cursor < oldLines.length) {
+    out.push(oldLines[cursor]);
+    cursor += 1;
+  }
+  return out.length === 0 ? '' : out.join('\n') + '\n';
+}
+
 export function buildFileDiff(input: FileDiffInput): string {
   const { oldContent, newContent, oldPath, newPath } = input;
   if (oldContent === newContent) return '';

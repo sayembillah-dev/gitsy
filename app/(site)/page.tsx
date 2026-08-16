@@ -10,7 +10,7 @@ export default function LandingPage() {
         accounts. Just you, three trees, and a graph.
       </p>
       <a
-        href="/play/test"
+        href="/play/act1-01-first-commit"
         className="rounded border border-rule bg-panel px-4 py-2 font-mono text-sm text-st-head transition-colors hover:border-st-head"
       >
         $ git init → play

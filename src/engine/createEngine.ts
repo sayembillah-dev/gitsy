@@ -20,6 +20,7 @@ import {
   type FsLike,
 } from './fsx';
 import { parseCommand } from './parser';
+import { answerPatch, startPatch, type PatchSession } from './patch';
 import { readRawRepo } from './readState';
 
 // Section 3 determinism rule: fixed author, monotonically incrementing
@@ -37,7 +38,16 @@ export interface EngineDeps {
   now?: () => number;
 }
 
-export function createEngine(deps: EngineDeps): GitEngine {
+/**
+ * The engine as the terminal sees it: the frozen GitEngine contract plus the
+ * interactive patch channel. types.ts stays untouched; `answer` only matters
+ * while a `git add -p` session is open (Phase 3).
+ */
+export interface PatchEngine extends GitEngine {
+  answer(input: string): Promise<CommandResult>;
+}
+
+export function createEngine(deps: EngineDeps): PatchEngine {
   const gitFs = deps.fs as any;
   const fs = ((gitFs.promises ?? gitFs) as FsLike);
   const ctx: EngineContext = {
@@ -48,6 +58,7 @@ export function createEngine(deps: EngineDeps): GitEngine {
     now: deps.now ?? (() => Math.floor(Date.now() / 1000)),
   };
   let setupCommits = 0;
+  let patchSession: PatchSession | null = null;
 
   const snapshot = async (): Promise<RepoSnapshot> => normalizeRepo(await readRawRepo(ctx));
 
@@ -92,6 +103,7 @@ export function createEngine(deps: EngineDeps): GitEngine {
       await mkdirp(fs, deps.dir);
       await git.init({ fs: gitFs, dir: deps.dir, defaultBranch: 'main' });
       setupCommits = 0;
+      patchSession = null;
       for (const op of setup) await applySetupOp(op);
       return snapshot();
     },
@@ -103,7 +115,17 @@ export function createEngine(deps: EngineDeps): GitEngine {
       }
       let out;
       try {
-        out = await execute(ctx, parsed.command);
+        if (parsed.command.cmd === 'add' && parsed.command.patch) {
+          if (patchSession) {
+            out = { ok: false, stdout: '', stderr: 'fatal: a patch session is already open\n' };
+          } else {
+            const started = await startPatch(ctx, parsed.command.paths);
+            patchSession = started.session;
+            out = { ok: true, stdout: started.out, stderr: '' };
+          }
+        } else {
+          out = await execute(ctx, parsed.command);
+        }
       } catch (err) {
         out = {
           ok: false,
@@ -112,6 +134,30 @@ export function createEngine(deps: EngineDeps): GitEngine {
         };
       }
       return { ok: out.ok, stdout: out.stdout, stderr: out.stderr, snapshot: await snapshot() };
+    },
+
+    async answer(input: string): Promise<CommandResult> {
+      if (!patchSession) {
+        return {
+          ok: false,
+          stdout: '',
+          stderr: 'fatal: no patch session in progress\n',
+          snapshot: await snapshot(),
+        };
+      }
+      try {
+        const step = await answerPatch(ctx, patchSession, input);
+        if (step.done) patchSession = null;
+        return { ok: true, stdout: step.text, stderr: '', snapshot: await snapshot() };
+      } catch (err) {
+        patchSession = null;
+        return {
+          ok: false,
+          stdout: '',
+          stderr: `fatal: ${err instanceof Error ? err.message : String(err)}\n`,
+          snapshot: await snapshot(),
+        };
+      }
     },
 
     snapshot,
