@@ -242,3 +242,40 @@ Format: date, what, why.
 - Gate: 152 tests / 18 files, tsc + next build clean (29 static pages,
   incl. 10 level pages + 10 level OG images), all routes probed 200,
   OG images verified as real PNGs.
+
+## Phase 9 — Remote simulation + Act 3 (8f0303a)
+
+- origin is a second repo directory on the SAME fs (deps.dir + '-origin';
+  LightningFS in the worker, sibling dir in tests). No HTTP transport:
+  fetch/push copy .git/objects recursively (loose objects are immutable and
+  content-addressed, so copy-if-absent is exactly right) and then move refs.
+  The section-6 stub-http trap is fully sidestepped.
+- fetchFromOrigin updates refs/remotes/origin/* only; local branches never
+  move. That asymmetry IS the Act 3 cliff and the gate test: "fetch moves
+  origin/main while main stays put" (test/engine-remote.spec.ts).
+- pushToOrigin does the real fast-forward check (is the origin tip reachable
+  from the pushed tip), real rejection text with hint lines, and
+  --force-with-lease as "origin tip must equal our tracking ref". --force
+  works too; act3-04's constraint makes force-pushing over a teammate FAIL
+  the level, so the lease habit is taught by goals, not lectures.
+- pull = fetchFromOrigin + execMerge('origin/<current>'). execMerge and
+  resolveRev now resolve remote-tracking names (refs/remotes/<name>), so
+  `git merge origin/main` and `git reset --hard origin/main` work anywhere.
+- remotePush/remoteCommit setup ops create origin lazily (ensureOrigin) and
+  use the same deterministic LEVEL_AUTHOR + monotonic T0 clock. buildLevel
+  wipes BOTH dirs, so levels without remote ops have no origin at all.
+- snapshot.remote is a full normalized snapshot of the origin repo (types.ts
+  field, untouched since Phase 0). remoteSynced predicate joins remoteAhead
+  and trackingSet: local tip === remote tip by StructHash equality, which is
+  exact because push copies objects and structHash is content-addressed.
+- git status gained real tracking lines (up to date / ahead N / behind N /
+  diverged N and M) plus the `## main...origin/main [ahead 1]` -sb form.
+  Combined short flags (-sb) are parsed, matching real git.
+- clone is parsed but always answers in-fiction ("Gitsy repositories arrive
+  pre-cloned") and was removed from ACT_OF: lock-copy never made sense for a
+  command that can never unlock.
+- Act 3 ships five levels: fetch-the-teammates-work (the gate), pull-it-down,
+  share-your-work (push), the-race (rejection -> pull -> push; force-push
+  kills the constraint), force-with-lease (lease refuses stale, works fresh).
+- Gate: 181 tests / 19 files (levels.spec now replays 15 levels), tsc +
+  next build clean (34 static pages), act-3 play/learn routes probed 200.
