@@ -53,3 +53,41 @@ Format: date, what, why.
 - UI direction (user, 2026-08-17): physics-based animation, GSAP allowed.
   BUILD-PLAN mentioned Framer Motion for Phase 4; final choice per component
   at implementation time.
+
+## 2026-08-17: Phase 2 predicates and evaluation
+
+- The 18-predicate registry from section 5 lives in `src/core/predicates.ts`
+  as `Record<string, PredicateEntry>`; entries carry a one-line `summary` for
+  future hint/tooling copy. Ref arguments accept branch/tag/remote names,
+  `HEAD`, or raw structural hashes (`resolveRefish`).
+- `maxCommands(n)` cannot read the snapshot, so it is the one entry flagged
+  `needsEnv`: `evaluate()` appends the player command count as the final arg.
+  Failed commands count toward it, matching how a player experiences a limit.
+- `workingTreeClean()` means real `git status` "nothing to commit": BOTH
+  panels clean. A staged-but-uncommitted change fails it. This is what makes
+  "stage the file" a non-solution in act1-02.
+- `isLinear(ref)` currently coincides with `noMergeCommits` plus a single-root
+  check (they are equivalent for parent-walk reachability). Kept as a separate
+  key because level copy says "linear" and Act 4 may tighten the definition
+  without touching level JSON.
+- `stillReachable(hash)` counts stash and reflog entries as roots, so Act 5
+  recovery levels work once reflog synthesis lands.
+- `remoteAhead`/`trackingSet` read `snap.remote`/`remoteBranches` and return
+  false until the Phase 9 remote simulation exists. Predicates never throw on
+  absent features.
+- Level JSON files carry test collateral beyond the frozen LevelDef:
+  `solution: string[]` and `wrongSolutions: string[][]` (min 1 each).
+  `levelDefOf()` strips them before `evaluate()`. Schema is zod 4 in
+  `src/core/levelSchema.ts`; unknown predicate keys fail validation, so a
+  typo'd assert dies in the test suite, not in front of a player.
+- zod 4 added as a runtime dep of src/core. Purity rule covers platform APIs
+  (React/DOM/node), not platform-agnostic libraries; core-purity.spec still
+  green.
+- Three draft Act 1 levels ship to power the gate (first commit, restore,
+  two-commit staging with a maxCommands constraint). Phase 7 expands to the
+  full eight; these three are written to survive as v1 content.
+- Unknown predicate at evaluate() runtime fails closed (goal counts as not
+  passed) instead of throwing: schema validation is the authoring guardrail,
+  runtime never crashes the game loop.
+- Gate passed: 85 tests across 10 files, including levels.spec.ts replaying
+  all 3 levels' canonical and wrong solutions through the real engine.

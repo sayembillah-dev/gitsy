@@ -1,0 +1,31 @@
+{
+  "id": "act1-01-first-commit",
+  "act": 1,
+  "title": "Your first snapshot",
+  "brief": "A new file just appeared in your project, but Git is not tracking it yet. Move it into the index, then take your first snapshot.",
+  "setup": [{ "op": "write", "path": "hello.txt", "content": "hello, git\n" }],
+  "unlocked": ["status", "add", "commit", "log"],
+  "goals": [
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "hello world"],
+      "label": "A commit with the message \"hello world\" exists"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "git status shows hello.txt as untracked. A commit can only see files that are in the index.",
+    "git add hello.txt moves the file into the index.",
+    "Then take the snapshot: git commit -m \"hello world\""
+  ],
+  "par": 3,
+  "solution": ["git status", "git add hello.txt", "git commit -m \"hello world\""],
+  "wrongSolutions": [
+    ["git status"],
+    ["git commit -m \"hello world\""]
+  ]
+}

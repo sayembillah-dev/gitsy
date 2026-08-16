@@ -1,0 +1,65 @@
+{
+  "id": "act1-03-stage-with-intent",
+  "act": 1,
+  "title": "Stage with intent",
+  "brief": "Two files need fixing, but they are two separate changes. Land them as two separate commits: fix the app first, then the notes.",
+  "setup": [
+    {
+      "op": "commit",
+      "message": "start",
+      "files": { "app.txt": "app v1\n", "notes.txt": "notes v1\n" }
+    },
+    { "op": "write", "path": "app.txt", "content": "app v2\n" },
+    { "op": "write", "path": "notes.txt", "content": "notes v2\n" }
+  ],
+  "unlocked": ["status", "diff", "add", "commit", "log"],
+  "goals": [
+    {
+      "assert": "commitCount",
+      "args": ["HEAD", 3],
+      "label": "Three commits in total (the start plus your two)"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "fix app"],
+      "label": "One commit is \"fix app\""
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "fix notes"],
+      "label": "One commit is \"fix notes\""
+    },
+    {
+      "assert": "isLinear",
+      "args": ["HEAD"],
+      "label": "History is a single straight line"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "constraints": [
+    {
+      "assert": "maxCommands",
+      "args": [6],
+      "label": "Six commands or fewer"
+    }
+  ],
+  "hints": [
+    "git add app.txt stages only the app change, nothing else.",
+    "Commit it, then do the same for notes.txt."
+  ],
+  "par": 4,
+  "solution": [
+    "git add app.txt",
+    "git commit -m \"fix app\"",
+    "git add notes.txt",
+    "git commit -m \"fix notes\""
+  ],
+  "wrongSolutions": [
+    ["git add .", "git commit -m \"fix app\""],
+    ["git add app.txt", "git commit -m \"fix app\""]
+  ]
+}

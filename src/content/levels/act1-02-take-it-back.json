@@ -1,0 +1,41 @@
+{
+  "id": "act1-02-take-it-back",
+  "act": 1,
+  "title": "Take it back",
+  "brief": "You rewrote draft.txt and immediately regretted it. The last commit still holds the good version. Throw your edit away.",
+  "setup": [
+    { "op": "commit", "message": "draft v1", "files": { "draft.txt": "version one\n" } },
+    { "op": "write", "path": "draft.txt", "content": "version two, much worse\n" }
+  ],
+  "unlocked": ["status", "diff", "restore", "add", "commit", "log"],
+  "goals": [
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "draft.txt matches the last commit again"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["HEAD", 1],
+      "label": "Still exactly one commit (nothing new committed)"
+    }
+  ],
+  "diagnostics": [
+    {
+      "when": "fileModified",
+      "args": ["draft.txt"],
+      "say": "draft.txt is still modified. Run git diff to see the damage, then git restore draft.txt to discard it."
+    }
+  ],
+  "hints": [
+    "Run git diff to see exactly what you changed.",
+    "git restore draft.txt copies the committed version back over your edit."
+  ],
+  "par": 2,
+  "solution": ["git diff", "git restore draft.txt"],
+  "wrongSolutions": [
+    ["git status"],
+    ["git add draft.txt"],
+    ["git add draft.txt", "git commit -m \"keep the mistake\""]
+  ]
+}
