@@ -4,4 +4,6 @@ out/
 dist/
 coverage/
 *.tsbuildinfo
+# auto-generated; flips between .next/ and .next/dev/ paths
+next-env.d.ts
 .DS_Store

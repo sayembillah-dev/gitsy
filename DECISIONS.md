@@ -48,6 +48,8 @@ Format: date, what, why.
 - isomorphic-git 1.41 API shapes pinned by failing tests: `readTree` returns
   `{ oid, tree }` where `tree` is the entries array; `hashBlob` returns
   `{ oid, type }`.
+- `next-env.d.ts` is gitignored: Next 16 rewrites its imports to `.next/types`
+  on build vs `.next/dev/types` on dev, so committing it churns every switch.
 - UI direction (user, 2026-08-17): physics-based animation, GSAP allowed.
   BUILD-PLAN mentioned Framer Motion for Phase 4; final choice per component
   at implementation time.
