@@ -1,0 +1,49 @@
+{
+  "id": "act5-02-bisect-the-break",
+  "act": 5,
+  "title": "Bisect the break",
+  "brief": "The app is broken at HEAD and the break is somewhere in the last six commits. Reading every diff would take all afternoon. `git bisect` binary-searches history instead: you mark the tip `bad` and a known-good old commit `good`; git checks out the commit in the MIDDLE; you look at `app.txt` and answer good or bad; repeat. Each answer halves the suspects.\n\nIn this repo, broken means `app.txt` contains the line BROKEN.\n\nStart the search with `git bisect start`, mark the tip bad, mark `HEAD~5` good, then answer honestly about each checkout. When git names the first bad commit, Gitsy leaves you standing right on it so you can inspect the culprit.",
+  "setup": [
+    { "op": "commit", "message": "add app v1", "files": { "app.txt": "app v1\n" } },
+    { "op": "commit", "message": "add logging", "files": { "app.txt": "app v1\nlog\n" } },
+    { "op": "commit", "message": "tune config", "files": { "config.txt": "config\n" } },
+    { "op": "commit", "message": "refactor parser", "files": { "app.txt": "app v1\nlog\nBROKEN\n" } },
+    { "op": "commit", "message": "add tests", "files": { "tests.txt": "tests\n" } },
+    { "op": "commit", "message": "docs update", "files": { "README.md": "# app\n" } }
+  ],
+  "unlocked": ["status", "log", "bisect", "diff"],
+  "goals": [
+    {
+      "assert": "detachedHead",
+      "args": [],
+      "label": "You are standing on the culprit"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "refactor parser"],
+      "label": "The culprit is \"refactor parser\""
+    },
+    {
+      "assert": "commitCount",
+      "args": ["HEAD", 4],
+      "label": "Exactly four commits are visible from here"
+    }
+  ],
+  "hints": [
+    "git bisect start, git bisect bad, git bisect good HEAD~5.",
+    "At each checkout, look at app.txt in the working tree panel. BROKEN line means git bisect bad; no BROKEN line means git bisect good.",
+    "Five suspects, so about three answers. Lying to bisect does not break it; it just names the wrong commit."
+  ],
+  "par": 5,
+  "solution": [
+    "git bisect start",
+    "git bisect bad",
+    "git bisect good HEAD~5",
+    "git bisect bad",
+    "git bisect good"
+  ],
+  "wrongSolutions": [
+    ["git bisect start", "git bisect bad", "git bisect good HEAD~5", "git bisect good"],
+    ["git status"]
+  ]
+}

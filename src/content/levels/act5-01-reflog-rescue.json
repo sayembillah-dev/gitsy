@@ -1,0 +1,56 @@
+{
+  "id": "act5-01-reflog-rescue",
+  "act": 5,
+  "title": "Reflog rescue",
+  "brief": "Welcome to Act 5: recovery. First lesson, and it is the one that saves a career some day: in git, almost nothing is ever deleted.\n\nProve it on purpose. `git reset --hard HEAD~2` throws \"add search\" and \"add export\" off the end of main. Do it. They vanish from `git log`.\n\nNow run `git reflog`. The reflog is git's own diary of every place HEAD has ever pointed, and it does not care about your reset. Find the sha of \"add export\" in the diary and `git reset --hard <sha>` main right back to it.",
+  "setup": [
+    { "op": "commit", "message": "add app v1", "files": { "app.txt": "app v1\n" } },
+    { "op": "commit", "message": "add search", "files": { "search.txt": "search\n" } },
+    { "op": "commit", "message": "add export", "files": { "export.txt": "export\n" } }
+  ],
+  "unlocked": ["status", "log", "reset", "reflog"],
+  "goals": [
+    {
+      "assert": "reflogContains",
+      "args": ["reset: moving to HEAD~2"],
+      "label": "You caused the accident on purpose (it is in the reflog)"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["main", 3],
+      "label": "main is back to three commits"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "add export"],
+      "label": "\"add export\" is the tip again"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "constraints": [
+    {
+      "assert": "maxCommands",
+      "args": [6],
+      "label": "at most 6 commands"
+    }
+  ],
+  "hints": [
+    "Cause the accident first: git reset --hard HEAD~2. It is safe here. That is the point of the lesson.",
+    "git reflog. Every line is HEAD@{n}: a place HEAD has been. Find the line for the 'add export' commit.",
+    "git reset --hard <the-sha-from-the-reflog>. The object store is append-only: reset moved a pointer, it deleted nothing."
+  ],
+  "par": 3,
+  "solution": [
+    "git reset --hard HEAD~2",
+    "git reflog",
+    "git reset --hard 27851a9"
+  ],
+  "wrongSolutions": [
+    ["git reset --hard HEAD~2"],
+    ["git status"]
+  ]
+}

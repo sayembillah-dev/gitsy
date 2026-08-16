@@ -156,11 +156,12 @@ describe('real-shaped failures', () => {
   });
 
   it('keeps later-act commands locked', async () => {
+    // Phase 10 unlocked the Act 4/5 set; show/rm/mv/config remain parked.
     const { engine } = await makeEngine();
     await engine.buildLevel(INITIAL_SETUP);
-    const r = await engine.run('git rebase -i main');
+    const r = await engine.run('git show HEAD');
     expect(r.ok).toBe(false);
-    expect(r.stderr).toContain('rebase: not available yet');
+    expect(r.stderr).toContain('show: not available yet');
   });
 
   it('reports an unborn branch on log', async () => {

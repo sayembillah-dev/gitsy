@@ -1,0 +1,83 @@
+{
+  "id": "act4-08-the-cleanup",
+  "act": 4,
+  "title": "Boss: the cleanup",
+  "brief": "Boss level. `feature` has four commits of chaos: \"wip: export\", \"debug junk\", \"more export work\", \"fix export edge case\". Meanwhile main moved one commit ahead. This branch is ready to ship when it is ONE commit called \"add export feature\", sitting on top of main, containing the final export.txt and none of the debug junk.\n\nEverything you need is already unlocked: `git rebase -i main`, the worksheet verbs (`reword <sha> <new message>` renames inline), and `--continue`.\n\nOne rebase. No merge commit. Four commands or fewer.",
+  "setup": [
+    { "op": "commit", "message": "add core", "files": { "app.txt": "app v1\n" } },
+    { "op": "branch", "name": "feature" },
+    { "op": "checkout", "ref": "feature" },
+    { "op": "commit", "message": "wip: export", "files": { "export.txt": "export v1\n" } },
+    { "op": "commit", "message": "debug junk", "files": { "debug.txt": "junk\n" } },
+    { "op": "commit", "message": "more export work", "files": { "export.txt": "export v1\nv2\n" } },
+    { "op": "commit", "message": "fix export edge case", "files": { "export.txt": "export v1\nv2\nedge\n" } },
+    { "op": "checkout", "ref": "main" },
+    { "op": "commit", "message": "main moves", "files": { "app.txt": "app v2\n" } },
+    { "op": "checkout", "ref": "feature" }
+  ],
+  "unlocked": ["status", "log", "rebase", "switch", "add", "commit", "diff"],
+  "goals": [
+    {
+      "assert": "commitCount",
+      "args": ["feature", 3],
+      "label": "feature is one commit on top of main's two"
+    },
+    {
+      "assert": "isAncestor",
+      "args": ["main", "feature"],
+      "label": "main is underneath feature"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["feature", "add export feature\n\nmore export work\n\nfix export edge case"],
+      "label": "One commit, renamed, with the squashed story preserved"
+    },
+    {
+      "assert": "fileInCommit",
+      "args": ["feature", "export.txt", "export v1\nv2\nedge\n"],
+      "label": "export.txt has the final content"
+    },
+    {
+      "assert": "fileInCommit",
+      "args": ["feature", "app.txt", "app v2\n"],
+      "label": "main's work came along (rebased onto it)"
+    },
+    {
+      "assert": "noMergeCommits",
+      "args": ["feature"],
+      "label": "No merge commits"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "constraints": [
+    {
+      "assert": "maxCommands",
+      "args": [4],
+      "label": "at most 4 commands"
+    }
+  ],
+  "hints": [
+    "git rebase -i main. The worksheet is oldest-first: wip, debug, more, fix.",
+    "reword the first line to 'add export feature', drop the debug line, squash the other two.",
+    "git rebase --continue runs the plan. If a squash conflicts, resolve, git add, --continue again."
+  ],
+  "par": 2,
+  "solution": [
+    "git rebase -i main",
+    "edit-file: REBASE_TODO reword%209f6113c%20add%20export%20feature%0Adrop%20e220432%20debug%20junk%0Asquash%20bebeebf%20more%20export%20work%0Asquash%207a8b98f%20fix%20export%20edge%20case%0A",
+    "git rebase --continue"
+  ],
+  "wrongSolutions": [
+    ["git rebase main"],
+    [
+      "git rebase -i main",
+      "edit-file: REBASE_TODO pick%209f6113c%20wip%3A%20export%0Adrop%20e220432%20debug%20junk%0Apick%20bebeebf%20more%20export%20work%0Apick%207a8b98f%20fix%20export%20edge%20case%0A",
+      "git rebase --continue"
+    ],
+    ["git status"]
+  ]
+}

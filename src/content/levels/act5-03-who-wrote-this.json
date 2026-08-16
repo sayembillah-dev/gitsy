@@ -1,0 +1,54 @@
+{
+  "id": "act5-03-who-wrote-this",
+  "act": 5,
+  "title": "Who wrote this line?",
+  "brief": "`config.txt` says `mode = unsafe` and production is on fire. Which commit did that? `git blame <file>` annotates every line with the commit that last touched it, who wrote it, and when. The `^` prefix marks lines from the very first commit.\n\nRead the blame, find the line that flipped the mode, then fix it: set `mode` back to `safe` (keep `timeout = 60`; that change was a separate, innocent commit) and commit as \"restore safe mode\".\n\nBlame is not for shaming; it is for finding the exact moment history changed its mind.",
+  "setup": [
+    { "op": "commit", "message": "add config", "files": { "config.txt": "mode = safe\ntimeout = 30\n" } },
+    { "op": "commit", "message": "tune timeout", "files": { "config.txt": "mode = safe\ntimeout = 60\n" } },
+    { "op": "commit", "message": "turn off safety", "files": { "config.txt": "mode = unsafe\ntimeout = 60\n" } }
+  ],
+  "unlocked": ["status", "log", "blame", "add", "commit", "diff"],
+  "goals": [
+    {
+      "assert": "fileInCommit",
+      "args": ["main", "config.txt", "mode = safe\ntimeout = 60\n"],
+      "label": "mode is safe, timeout stays 60"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "restore safe mode"],
+      "label": "The fix is committed as \"restore safe mode\""
+    },
+    {
+      "assert": "commitCount",
+      "args": ["main", 4],
+      "label": "Four commits: the fix sits on top"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "git blame config.txt. Line 1's sha differs from line 2's: that commit is your culprit.",
+    "Edit config.txt to exactly: mode = safe / timeout = 60 (keep the timeout change; only the mode line was the crime).",
+    "Then git add config.txt and git commit -m \"restore safe mode\"."
+  ],
+  "par": 3,
+  "solution": [
+    "git blame config.txt",
+    "edit-file: config.txt mode%20%3D%20safe%0Atimeout%20%3D%2060%0A",
+    "git add config.txt",
+    "git commit -m \"restore safe mode\""
+  ],
+  "wrongSolutions": [
+    [
+      "edit-file: config.txt mode%20%3D%20safe%0Atimeout%20%3D%2030%0A",
+      "git add config.txt",
+      "git commit -m \"restore safe mode\""
+    ],
+    ["git blame config.txt"]
+  ]
+}

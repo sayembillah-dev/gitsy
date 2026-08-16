@@ -11,16 +11,39 @@ import {
   writeTextFile,
   type EngineContext,
 } from './fsx';
+import { amendHead, execCherryPick, execRebase, execRevert, threeWayApply } from './history';
+import {
+  execBisect,
+  execBlame,
+  execReflog,
+  execWorktree,
+  pickaxeFilter,
+  worktreeOwner,
+} from './inspect';
+import { logRef, REBASE_TODO_PATH } from './journal';
 import type { ParsedCommand } from './parser';
 import {
-  flattenTree,
   headTreeOids,
   indexOids,
   readBlobText,
   statusRows,
   workdirFiles,
-  type StatusRow,
 } from './readState';
+import {
+  branchSha,
+  dirtyOverlap,
+  fail,
+  formatGitDate,
+  headInfo,
+  ok,
+  remoteSha,
+  resolveRev,
+  short,
+  treeOfRef,
+  UNKNOWN_REV,
+  type ExecOutput,
+} from './refs';
+import { execStash } from './stash';
 import {
   NO_ORIGIN,
   aheadBehind,
@@ -29,15 +52,7 @@ import {
   pushToOrigin,
 } from './remote';
 
-export interface ExecOutput {
-  ok: boolean;
-  stdout: string;
-  stderr: string;
-}
-
-const ok = (stdout = ''): ExecOutput => ({ ok: true, stdout, stderr: '' });
-const fail = (stderr: string): ExecOutput => ({ ok: false, stdout: '', stderr });
-const short = (sha: string) => sha.slice(0, 7);
+export type { ExecOutput } from './refs';
 
 type Cmd<K extends ParsedCommand['cmd']> = Extract<ParsedCommand, { cmd: K }>;
 
@@ -76,6 +91,22 @@ export async function execute(ctx: EngineContext, cmd: ParsedCommand): Promise<E
       return execPull(ctx, cmd);
     case 'push':
       return execPush(ctx, cmd);
+    case 'revert':
+      return execRevert(ctx, cmd);
+    case 'cherry-pick':
+      return execCherryPick(ctx, cmd);
+    case 'rebase':
+      return execRebase(ctx, cmd);
+    case 'stash':
+      return execStash(ctx, cmd);
+    case 'reflog':
+      return execReflog(ctx, cmd);
+    case 'bisect':
+      return execBisect(ctx, cmd);
+    case 'blame':
+      return execBlame(ctx, cmd);
+    case 'worktree':
+      return execWorktree(ctx, cmd);
     case 'clone':
       return fail(
         'fatal: Gitsy repositories arrive pre-cloned.\n' +
@@ -83,23 +114,6 @@ export async function execute(ctx: EngineContext, cmd: ParsedCommand): Promise<E
       );
     case 'unsupported':
       return fail(`${cmd.name}: not available yet. It unlocks in a later act.\n`);
-  }
-}
-
-type HeadInfo =
-  | { type: 'branch'; name: string }
-  | { type: 'unborn'; name: string }
-  | { type: 'detached'; sha: string };
-
-async function headInfo(ctx: EngineContext): Promise<HeadInfo> {
-  const raw = (await readTextFile(ctx.fs, joinPath(ctx.dir, '.git', 'HEAD'))).trim();
-  if (!raw.startsWith('ref: ')) return { type: 'detached', sha: raw };
-  const name = raw.slice(5).replace(/^refs\/heads\//, '');
-  try {
-    await git.resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 5 });
-    return { type: 'branch', name };
-  } catch {
-    return { type: 'unborn', name };
   }
 }
 
@@ -128,6 +142,8 @@ async function execAdd(ctx: EngineContext, cmd: Cmd<'add'>): Promise<ExecOutput>
   }
   const rows = await statusRows(ctx);
   const targets = rows.filter(([path, h, w, s]) => {
+    // The rebase worksheet is engine bookkeeping, never commit content.
+    if (path === REBASE_TODO_PATH) return false;
     if (cmd.all) return !(h === 1 && w === 1 && s === 1); // anything noteworthy
     return pathMatches(path, cmd.paths);
   });
@@ -135,6 +151,12 @@ async function execAdd(ctx: EngineContext, cmd: Cmd<'add'>): Promise<ExecOutput>
   if (!cmd.all) {
     const idx = await indexOids(ctx);
     for (const p of cmd.paths) {
+      if (p === REBASE_TODO_PATH) {
+        return fail(
+          `fatal: ${REBASE_TODO_PATH} is the rebase worksheet, not part of your tree\n` +
+            'hint: edit it, save it, then run git rebase --continue\n',
+        );
+      }
       const inMatrix = rows.some(([path]) => pathMatches(path, [p]));
       const onDisk = await pathExists(ctx.fs, joinPath(ctx.dir, p));
       if (!inMatrix && !onDisk && !idx.has(p)) {
@@ -153,12 +175,13 @@ async function execAdd(ctx: EngineContext, cmd: Cmd<'add'>): Promise<ExecOutput>
 // ---- commit -------------------------------------------------------------
 
 async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecOutput> {
-  if (cmd.messages.length === 0) {
-    return fail(
-      'error: no commit message supplied.\n' +
-        'hint: use git commit -m "your message here"\n' +
-        'fatal: aborting commit due to empty commit message.\n',
-    );
+  const mergingForAmend = await pathExists(ctx.fs, joinPath(ctx.dir, '.git', 'MERGE_HEAD'));
+  if (cmd.amend) {
+    if (mergingForAmend) {
+      return fail('fatal: You are in the middle of a merge; cannot amend.\n');
+    }
+    // --amend with no -m keeps the original message (our always --no-edit).
+    return amendHead(ctx, cmd.messages);
   }
 
   const rows = await statusRows(ctx);
@@ -166,14 +189,20 @@ async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecO
   const head = await headInfo(ctx);
   const label = head.type === 'detached' ? 'HEAD' : head.name;
 
-  // Merge finale: committing with MERGE_HEAD present creates the two-parent
-  // merge commit, but only after every conflict marker is edited away. This
-  // check comes before the nothing-staged refusal: real git answers
-  // "unmerged files" even when the index is untouched.
-  const mergeHeadPath = joinPath(ctx.dir, '.git', 'MERGE_HEAD');
-  const merging = await pathExists(ctx.fs, mergeHeadPath);
+  // Sequencer states: MERGE_HEAD (Phase 4), REVERT_HEAD and CHERRY_PICK_HEAD
+  // (Phase 10). Committing with one present finishes the operation, but only
+  // after every conflict marker is edited away. This check comes before the
+  // nothing-staged refusal: real git answers "unmerged files" even when the
+  // index is untouched.
+  const sequencerPath = (name: string) => joinPath(ctx.dir, '.git', name);
+  const merging = await pathExists(ctx.fs, sequencerPath('MERGE_HEAD'));
+  const reverting = await pathExists(ctx.fs, sequencerPath('REVERT_HEAD'));
+  const picking = await pathExists(ctx.fs, sequencerPath('CHERRY_PICK_HEAD'));
+  const inSequencer = merging || reverting || picking;
+
   let parents: string[] | undefined;
-  if (merging) {
+  let sequencerMessage: string | null = null;
+  if (inSequencer) {
     const workdir = await workdirFiles(ctx);
     const unmerged = [...workdir.keys()].filter((p) =>
       (workdir.get(p)?.content ?? '').includes('<<<<<<< '),
@@ -184,12 +213,26 @@ async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecO
           `fatal: Exiting because of an unresolved conflict.\n`,
       );
     }
-    const theirSha = (await readTextFile(ctx.fs, mergeHeadPath)).trim();
-    const headSha = await git.resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 });
-    parents = [headSha, theirSha];
+    if (merging) {
+      const theirSha = (await readTextFile(ctx.fs, sequencerPath('MERGE_HEAD'))).trim();
+      const headSha = await git.resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 });
+      parents = [headSha, theirSha];
+    } else {
+      const msgFile = reverting ? 'REVERT_MSG' : 'CHERRY_PICK_MSG';
+      sequencerMessage = (await readTextFile(ctx.fs, sequencerPath(msgFile))).trim();
+    }
   }
 
-  if (staged.length === 0 && !cmd.allowEmpty && !merging) {
+  const message = cmd.messages.length > 0 ? cmd.messages.join('\n\n') : (sequencerMessage ?? '');
+  if (message === '') {
+    return fail(
+      'error: no commit message supplied.\n' +
+        'hint: use git commit -m "your message here"\n' +
+        'fatal: aborting commit due to empty commit message.\n',
+    );
+  }
+
+  if (staged.length === 0 && !cmd.allowEmpty && !inSequencer) {
     const dirty = rows.some(([, h, w, s]) => !(h === 1 && w === 1 && s === 1));
     return {
       ok: false,
@@ -202,7 +245,9 @@ async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecO
     };
   }
 
-  const message = cmd.messages.join('\n\n');
+  const previous = await git
+    .resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 })
+    .catch(() => null);
   const who = { ...ctx.author, timestamp: ctx.now(), timezoneOffset: 0 };
   const sha = await git.commit({
     fs: ctx.gitFs,
@@ -212,7 +257,30 @@ async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecO
     committer: who,
     ...(parents ? { parent: parents } : {}),
   });
-  if (merging) await ctx.fs.unlink(mergeHeadPath);
+  if (merging) await ctx.fs.unlink(sequencerPath('MERGE_HEAD'));
+  if (reverting) {
+    await ctx.fs.unlink(sequencerPath('REVERT_HEAD')).catch(() => undefined);
+    await ctx.fs.unlink(sequencerPath('REVERT_MSG')).catch(() => undefined);
+  }
+  if (picking) {
+    await ctx.fs.unlink(sequencerPath('CHERRY_PICK_HEAD')).catch(() => undefined);
+    await ctx.fs.unlink(sequencerPath('CHERRY_PICK_MSG')).catch(() => undefined);
+  }
+
+  // Every user-visible ref movement feeds the reflog journal (Act 5).
+  const verb = merging
+    ? 'commit (merge)'
+    : reverting
+      ? 'revert'
+      : picking
+        ? 'commit (cherry-pick)'
+        : 'commit';
+  const refName = head.type === 'branch' || head.type === 'unborn' ? `refs/heads/${head.name}` : 'HEAD';
+  await logRef(ctx, refName, previous, sha, `${verb}: ${message.split('\n')[0]}`);
+  if (refName !== 'HEAD') {
+    await logRef(ctx, 'HEAD', previous, sha, `${verb}: ${message.split('\n')[0]}`);
+  }
+
   const root = head.type === 'unborn' ? ' (root-commit)' : '';
   const n = staged.length;
   return ok(
@@ -222,34 +290,6 @@ async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecO
 }
 
 // ---- branch / switch / checkout / tag ------------------------------------
-
-async function branchSha(ctx: EngineContext, name: string): Promise<string | null> {
-  try {
-    return await git.resolveRef({
-      fs: ctx.gitFs,
-      dir: ctx.dir,
-      ref: `refs/heads/${name}`,
-      depth: 10,
-    });
-  } catch {
-    return null;
-  }
-}
-
-/** Resolves a remote-tracking ref name like "origin/main" to a SHA. */
-async function remoteSha(ctx: EngineContext, name: string): Promise<string | null> {
-  if (!name.includes('/')) return null;
-  try {
-    return await git.resolveRef({
-      fs: ctx.gitFs,
-      dir: ctx.dir,
-      ref: `refs/remotes/${name}`,
-      depth: 10,
-    });
-  } catch {
-    return null;
-  }
-}
 
 // ---- remote / fetch / pull / push (Phase 9) -------------------------------
 
@@ -346,19 +386,83 @@ async function execSwitchLike(
     if (await branchSha(ctx, cmd.name)) {
       return fail(`fatal: a branch named '${cmd.name}' already exists\n`);
     }
+    const from = await git
+      .resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 })
+      .catch(() => null);
     await git.branch({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
     await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
+    if (from) {
+      const sha = (await branchSha(ctx, cmd.name)) ?? from;
+      await logRef(ctx, `refs/heads/${cmd.name}`, null, sha, `branch: Created from HEAD`);
+      await logRef(ctx, 'HEAD', from, sha, `checkout: moving from ${short(from)} to ${cmd.name}`);
+    }
     return ok(`Switched to a new branch '${cmd.name}'\n`);
   }
-  if (!(await branchSha(ctx, cmd.name))) {
+
+  const head = await headInfo(ctx);
+  const fromSha = await git
+    .resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 })
+    .catch(() => null);
+  const fromLabel =
+    head.type === 'branch' ? head.name : fromSha ? short(fromSha) : 'HEAD';
+
+  const wantsDetach = verb === 'switch' && (cmd as Cmd<'switch'>).detach;
+  const target = wantsDetach ? null : await branchSha(ctx, cmd.name);
+  if (target) {
+    // A linked worktree owns its branch exclusively (real git's rule).
+    const owner = await worktreeOwner(ctx, cmd.name);
+    if (owner) {
+      return fail(`fatal: '${cmd.name}' is already checked out at '${owner}'\n`);
+    }
+    // Real git refuses to move when uncommitted changes overlap the delta.
+    const overlap = await dirtyOverlap(ctx, target);
+    if (overlap.length > 0) {
+      return fail(
+        'error: Your local changes to the following files would be overwritten by checkout:\n' +
+          overlap.map((p) => `\t${p}`).join('\n') +
+          '\nPlease commit your changes or stash them before you switch branches.\nAborting\n',
+      );
+    }
+    await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
+    if (fromSha) await logRef(ctx, 'HEAD', fromSha, target, `checkout: moving from ${fromLabel} to ${cmd.name}`);
+    return ok(`Switched to branch '${cmd.name}'\n`);
+  }
+
+  // Not a branch: a commit-ish detaches HEAD. switch demands --detach;
+  // checkout detaches implicitly (with the famous warning).
+  const sha = await resolveRev(ctx, cmd.name);
+  if (!sha) {
     return fail(
       verb === 'switch'
         ? `fatal: invalid reference: ${cmd.name}\n`
         : `error: pathspec '${cmd.name}' did not match any file(s) known to git\n`,
     );
   }
-  await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
-  return ok(`Switched to branch '${cmd.name}'\n`);
+  if (verb === 'switch' && !(cmd as Cmd<'switch'>).detach) {
+    return fail(
+      `fatal: a branch is expected, got commit '${cmd.name}'\n` +
+        `hint: if you meant to detach HEAD at that commit: git switch --detach ${cmd.name}\n`,
+    );
+  }
+  const overlap = await dirtyOverlap(ctx, sha);
+  if (overlap.length > 0) {
+    return fail(
+      'error: Your local changes to the following files would be overwritten by checkout:\n' +
+        overlap.map((p) => `\t${p}`).join('\n') +
+        '\nPlease commit your changes or stash them before you switch branches.\nAborting\n',
+    );
+  }
+  await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: sha, force: true });
+  const { commit } = await git.readCommit({ fs: ctx.gitFs, dir: ctx.dir, oid: sha });
+  if (fromSha) {
+    await logRef(ctx, 'HEAD', fromSha, sha, `checkout: moving from ${fromLabel} to ${cmd.name}`);
+  }
+  return ok(
+    `Note: switching to '${cmd.name}'.\n\n` +
+      "You are in 'detached HEAD' state. Commits here belong to no branch;\n" +
+      'create one with git switch -c <name> if you want to keep them.\n\n' +
+      `HEAD is now at ${short(sha)} ${commit.message.split('\n')[0]}\n`,
+  );
 }
 
 async function execTag(ctx: EngineContext, cmd: Cmd<'tag'>): Promise<ExecOutput> {
@@ -367,11 +471,6 @@ async function execTag(ctx: EngineContext, cmd: Cmd<'tag'>): Promise<ExecOutput>
 }
 
 // ---- merge ----------------------------------------------------------------
-
-async function treeOfRef(ctx: EngineContext, sha: string): Promise<Record<string, string>> {
-  const { commit } = await git.readCommit({ fs: ctx.gitFs, dir: ctx.dir, oid: sha });
-  return flattenTree(ctx, commit.tree);
-}
 
 async function execMerge(ctx: EngineContext, cmd: Cmd<'merge'>): Promise<ExecOutput> {
   const head = await headInfo(ctx);
@@ -407,6 +506,7 @@ async function execMerge(ctx: EngineContext, cmd: Cmd<'merge'>): Promise<ExecOut
         force: true,
       });
       await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: head.name, force: true });
+      await logRef(ctx, `refs/heads/${head.name}`, oursSha, theirsSha, `merge ${cmd.branch}: fast-forward`);
     } else {
       await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: theirsSha, force: true });
     }
@@ -418,36 +518,12 @@ async function execMerge(ctx: EngineContext, cmd: Cmd<'merge'>): Promise<ExecOut
     treeOfRef(ctx, oursSha),
     treeOfRef(ctx, theirsSha),
   ]);
-  const paths = [
-    ...new Set([...Object.keys(baseT), ...Object.keys(oursT), ...Object.keys(theirsT)]),
-  ].sort();
+  const res = await threeWayApply(ctx, baseT, oursT, theirsT, cmd.branch);
 
-  const changes: { path: string; content: string | null }[] = [];
-  const conflicts: string[] = [];
-  for (const p of paths) {
-    const b = baseT[p] ?? null;
-    const o = oursT[p] ?? null;
-    const t = theirsT[p] ?? null;
-    if (o === t) continue; // identical (or both absent)
-    if (b === o) changes.push({ path: p, content: t }); // only their side moved
-    else if (b === t) continue; // only our side moved
-    else conflicts.push(p); // both sides moved differently
-  }
-
-  for (const change of changes) {
-    if (change.content === null) {
-      await ctx.fs.unlink(joinPath(ctx.dir, change.path)).catch(() => undefined);
-      await git.remove({ fs: ctx.gitFs, dir: ctx.dir, filepath: change.path });
-    } else {
-      await writeTextFile(ctx.fs, joinPath(ctx.dir, change.path), change.content);
-      await git.add({ fs: ctx.gitFs, dir: ctx.dir, filepath: change.path });
-    }
-  }
-
-  if (conflicts.length === 0) {
+  if (res.conflicts.length === 0) {
     const who = { ...ctx.author, timestamp: ctx.now(), timezoneOffset: 0 };
     const message = `Merge branch '${cmd.branch}'`;
-    await git.commit({
+    const mergeSha = await git.commit({
       fs: ctx.gitFs,
       dir: ctx.dir,
       message,
@@ -455,20 +531,16 @@ async function execMerge(ctx: EngineContext, cmd: Cmd<'merge'>): Promise<ExecOut
       committer: who,
       parent: [oursSha, theirsSha],
     });
+    const refName = head.type === 'branch' ? `refs/heads/${head.name}` : 'HEAD';
+    await logRef(ctx, refName, oursSha, mergeSha, `commit (merge): ${message}`);
+    if (refName !== 'HEAD') await logRef(ctx, 'HEAD', oursSha, mergeSha, `commit (merge): ${message}`);
     return ok(`Merge made by the 'ort' strategy.\n`);
   }
 
-  for (const p of conflicts) {
-    const marked =
-      `<<<<<<< HEAD\n${oursT[p] ?? ''}` +
-      `=======\n${theirsT[p] ?? ''}` +
-      `>>>>>>> ${cmd.branch}\n`;
-    await writeTextFile(ctx.fs, joinPath(ctx.dir, p), marked);
-  }
   await writeTextFile(ctx.fs, joinPath(ctx.dir, '.git', 'MERGE_HEAD'), theirsSha + '\n');
   return fail(
-    `Auto-merging ${conflicts.join(', ')}\n` +
-      `CONFLICT (content): Merge conflict in ${conflicts[0]}\n` +
+    `Auto-merging ${res.conflicts.join(', ')}\n` +
+      `CONFLICT (content): Merge conflict in ${res.conflicts[0]}\n` +
       'Automatic merge failed; fix conflicts and then commit the result.\n',
   );
 }
@@ -586,22 +658,6 @@ async function execStatus(ctx: EngineContext, cmd: Cmd<'status'>): Promise<ExecO
 
 // ---- log ----------------------------------------------------------------
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function formatGitDate(ts: number, tzOffset: number): string {
-  const sign = tzOffset < 0 ? '-' : '+';
-  const abs = Math.abs(tzOffset);
-  const tz = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}${String(abs % 60).padStart(2, '0')}`;
-  const d = new Date((ts + tzOffset * 60) * 1000);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ` +
-    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} ` +
-    `${d.getUTCFullYear()} ${tz}`
-  );
-}
-
 async function execLog(ctx: EngineContext, cmd: Cmd<'log'>): Promise<ExecOutput> {
   const head = await headInfo(ctx);
   if (head.type === 'unborn') {
@@ -612,6 +668,16 @@ async function execLog(ctx: EngineContext, cmd: Cmd<'log'>): Promise<ExecOutput>
     commits = await git.log({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD' });
   } catch (err) {
     return fail(`fatal: unable to read log: ${err instanceof Error ? err.message : String(err)}\n`);
+  }
+  // -S<string> (the pickaxe, Act 5): keep only commits where the number of
+  // occurrences of the string changed relative to the first parent.
+  if (cmd.pickaxe !== null) {
+    const keep = await pickaxeFilter(
+      ctx,
+      commits.map((c) => ({ oid: c.oid, parent: [...c.commit.parent] })),
+      cmd.pickaxe,
+    );
+    commits = commits.filter((c) => keep.has(c.oid));
   }
   const limited = cmd.maxCount ? commits.slice(0, cmd.maxCount) : commits;
   if (cmd.oneline) {
@@ -727,75 +793,6 @@ async function execRestore(ctx: EngineContext, cmd: Cmd<'restore'>): Promise<Exe
 
 // ---- reset ----------------------------------------------------------------
 
-const UNKNOWN_REV = (rev: string): string =>
-  `fatal: ambiguous argument '${rev}': unknown revision or path not in the working tree.\n` +
-  `Use '--' to separate paths from revisions, like this:\n` +
-  `'git <command> [<revision>...] -- [<file>...]'\n`;
-
-/** Resolves HEAD, HEAD~n / HEAD^n suffixes, branch and tag names, and SHA
- *  prefixes (repos are tiny, so a prefix scan across every ref is cheap). */
-async function resolveRev(ctx: EngineContext, rev: string): Promise<string | null> {
-  const headM = /^HEAD((?:[~^]\d*)*)$/.exec(rev);
-  if (headM) {
-    let sha: string;
-    try {
-      sha = await git.resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 });
-    } catch {
-      return null;
-    }
-    for (const step of headM[1].match(/[~^]\d*/g) ?? []) {
-      const n = step.length > 1 ? Number(step.slice(1)) : 1;
-      if (step[0] === '~') {
-        const log = await git.log({ fs: ctx.gitFs, dir: ctx.dir, ref: sha, depth: n + 1 });
-        if (log.length <= n) return null;
-        sha = log[n].oid;
-      } else {
-        const { commit } = await git.readCommit({ fs: ctx.gitFs, dir: ctx.dir, oid: sha });
-        const parent = commit.parent[n - 1];
-        if (!parent) return null;
-        sha = parent;
-      }
-    }
-    return sha;
-  }
-
-  const branch = await branchSha(ctx, rev);
-  if (branch) return branch;
-  const tracking = await remoteSha(ctx, rev);
-  if (tracking) return tracking;
-  try {
-    return await git.resolveRef({
-      fs: ctx.gitFs,
-      dir: ctx.dir,
-      ref: `refs/tags/${rev}`,
-      depth: 10,
-    });
-  } catch {
-    // not a tag either: fall through to the SHA-prefix scan
-  }
-  if (/^[0-9a-f]{4,40}$/.test(rev)) {
-    const refs = [
-      ...(await git.listBranches({ fs: ctx.gitFs, dir: ctx.dir })).map((b) => `refs/heads/${b}`),
-      ...(await git.listTags({ fs: ctx.gitFs, dir: ctx.dir })).map((t) => `refs/tags/${t}`),
-    ];
-    const seen = new Set<string>();
-    for (const ref of refs) {
-      let log;
-      try {
-        log = await git.log({ fs: ctx.gitFs, dir: ctx.dir, ref });
-      } catch {
-        continue;
-      }
-      for (const entry of log) {
-        if (seen.has(entry.oid)) continue;
-        seen.add(entry.oid);
-        if (entry.oid.startsWith(rev)) return entry.oid;
-      }
-    }
-  }
-  return null;
-}
-
 async function execReset(ctx: EngineContext, cmd: Cmd<'reset'>): Promise<ExecOutput> {
   const head = await headInfo(ctx);
   const target = cmd.target ?? 'HEAD';
@@ -812,6 +809,10 @@ async function execReset(ctx: EngineContext, cmd: Cmd<'reset'>): Promise<ExecOut
   // Any reset mode abandons an in-progress merge (real git clears MERGE_HEAD).
   await ctx.fs.unlink(joinPath(ctx.dir, '.git', 'MERGE_HEAD')).catch(() => undefined);
 
+  const previous = await git
+    .resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 })
+    .catch(() => null);
+
   // Move the ref HEAD points at (or HEAD itself when detached).
   if (head.type === 'branch') {
     await git.writeRef({
@@ -825,6 +826,16 @@ async function execReset(ctx: EngineContext, cmd: Cmd<'reset'>): Promise<ExecOut
     await git.writeRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', value: targetSha, force: true });
   }
   const checkoutRef = head.type === 'branch' ? head.name : targetSha;
+
+  // reset is the classic way history gets "lost"; it must be visible in the
+  // reflog or Act 5 recovery lessons have nothing to find.
+  if (previous && previous !== targetSha) {
+    const refName = head.type === 'branch' ? `refs/heads/${head.name}` : 'HEAD';
+    await logRef(ctx, refName, previous, targetSha, `reset: moving to ${target}`);
+    if (refName !== 'HEAD') {
+      await logRef(ctx, 'HEAD', previous, targetSha, `reset: moving to ${target}`);
+    }
+  }
 
   if (cmd.mode === 'soft') return ok(); // ref moved; index and workdir untouched
 

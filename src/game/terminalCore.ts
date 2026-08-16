@@ -3,7 +3,7 @@
 // typing. Terminal.tsx is a thin keyboard/display wrapper around this.
 
 import { evaluate } from '@/core/evaluate';
-import type { EvaluationResult, LevelDef, RepoSnapshot } from '@/core/types';
+import type { EvaluationResult, LevelDef, RepoSnapshot, StructHash } from '@/core/types';
 import type { EditorEngine } from '@/engine/createEngine';
 import { PATCH_PROMPT } from '@/engine/patch';
 
@@ -44,6 +44,8 @@ export interface SubmitResult {
   complete: boolean;
   snapshot?: RepoSnapshot;
   evaluation?: EvaluationResult;
+  /** Old-to-new hashes when the command rewrote history (Act 4 morph). */
+  rewrites?: Record<StructHash, StructHash>;
 }
 
 export interface TerminalSessionOpts {
@@ -159,6 +161,15 @@ export class TerminalSession {
     if (name === 'clear') return { stdout: '', stderr: '', clear: true, complete: false };
     if (name === 'help') return { stdout: helpText(level), stderr: '', complete: false };
 
+    // Flag-level locks: --amend and -S belong to later acts even though
+    // commit and log themselves unlocked long ago.
+    if (name === 'commit' && /(?:^|\s)--amend(?:\s|$)/.test(line) && level.act < 4) {
+      return { stdout: '', stderr: 'commit --amend: not yet unlocked - reach Act 4\n', complete: false };
+    }
+    if (name === 'log' && /(?:^|\s)-S(?:\S|\s|$)/.test(line) && level.act < 5) {
+      return { stdout: '', stderr: 'log -S: not yet unlocked - reach Act 5\n', complete: false };
+    }
+
     // The in-fiction lock: known-but-locked commands never reach the engine
     // and never count against maxCommands.
     if (name && !level.unlocked.includes(name)) {
@@ -187,6 +198,7 @@ export class TerminalSession {
       complete: result.complete,
       snapshot: r.snapshot,
       evaluation: result,
+      ...(r.rewrites ? { rewrites: r.rewrites } : {}),
     };
   }
 }

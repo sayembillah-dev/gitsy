@@ -19,11 +19,26 @@ import act302 from './levels/act3-02-pull-it-down.json';
 import act303 from './levels/act3-03-share-your-work.json';
 import act304 from './levels/act3-04-the-race.json';
 import act305 from './levels/act3-05-force-with-lease.json';
+import act401 from './levels/act4-01-fix-the-last-commit.json';
+import act402 from './levels/act4-02-un-commit-keep-the-work.json';
+import act403 from './levels/act4-03-revert-dont-rewrite.json';
+import act404 from './levels/act4-04-pick-the-fix.json';
+import act405 from './levels/act4-05-rebase-copies-not-moves.json';
+import act406 from './levels/act4-06-tidy-the-branch.json';
+import act407 from './levels/act4-07-stash-it.json';
+import act408 from './levels/act4-08-the-cleanup.json';
+import act501 from './levels/act5-01-reflog-rescue.json';
+import act502 from './levels/act5-02-bisect-the-break.json';
+import act503 from './levels/act5-03-who-wrote-this.json';
+import act504 from './levels/act5-04-the-pickaxe.json';
+import act505 from './levels/act5-05-a-second-worktree.json';
 
 const parsed = [
   act101, act102, act103, act104, act105, act106, act107, act108,
   act201, act202,
   act301, act302, act303, act304, act305,
+  act401, act402, act403, act404, act405, act406, act407, act408,
+  act501, act502, act503, act504, act505,
 ].map((json) => parseLevelFile(json));
 
 export const levelList: LevelFile[] = parsed;

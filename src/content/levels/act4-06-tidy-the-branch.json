@@ -1,0 +1,63 @@
+{
+  "id": "act4-06-tidy-the-branch",
+  "act": 4,
+  "title": "Tidy the branch",
+  "brief": "`feature` works, but its story is a mess: \"add parser\", \"WIP\", \"debug junk\", \"add tests\". Before this branch merges, the story should be: parser (complete), tests. The WIP commit's changes belong INSIDE the parser commit; the debug commit should not exist at all.\n\n`git rebase -i main` opens the rebase worksheet: one line per commit, oldest first, each starting with a verb. It appears in your editor as `REBASE_TODO`. Change the verbs: keep the parser commit with `pick`, fold WIP into it with `squash`, drop the junk with `drop`, keep the tests. Save, then run `git rebase --continue`.\n\nThis is the real interactive rebase, minus the terminal editor: the todo list is the whole interface.",
+  "setup": [
+    { "op": "commit", "message": "base commit", "files": { "app.txt": "app\n" } },
+    { "op": "branch", "name": "feature" },
+    { "op": "checkout", "ref": "feature" },
+    { "op": "commit", "message": "add parser", "files": { "parser.txt": "parser v1\n" } },
+    { "op": "commit", "message": "WIP", "files": { "parser.txt": "parser v1\nwip\n" } },
+    { "op": "commit", "message": "debug junk", "files": { "debug.txt": "junk\n" } },
+    { "op": "commit", "message": "add tests", "files": { "tests.txt": "tests\n" } }
+  ],
+  "unlocked": ["status", "log", "rebase", "diff"],
+  "goals": [
+    {
+      "assert": "commitCount",
+      "args": ["feature", 3],
+      "label": "Three commits: base, parser, tests"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["feature", "add parser\n\nWIP"],
+      "label": "WIP is squashed into the parser commit"
+    },
+    {
+      "assert": "fileInCommit",
+      "args": ["feature", "parser.txt", "parser v1\nwip\n"],
+      "label": "The WIP lines survived the squash"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["feature", "add tests"],
+      "label": "The tests commit survived"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "git rebase -i main writes REBASE_TODO into your file list. Open it in the editor.",
+    "Line order is oldest first. Make line 2 read 'squash <sha> WIP' and line 3 read 'drop <sha> debug junk'. Save, then git rebase --continue.",
+    "Deleting a line also drops the commit. The sha in each line must match the worksheet; only the verb changes."
+  ],
+  "par": 2,
+  "solution": [
+    "git rebase -i main",
+    "edit-file: REBASE_TODO pick%2039b51a6%20add%20parser%0Asquash%20389c2e8%20WIP%0Adrop%20b1d2126%20debug%20junk%0Apick%20479442a%20add%20tests%0A",
+    "git rebase --continue"
+  ],
+  "wrongSolutions": [
+    ["git rebase main"],
+    [
+      "git rebase -i main",
+      "edit-file: REBASE_TODO pick%2039b51a6%20add%20parser%0Apick%20389c2e8%20WIP%0Adrop%20b1d2126%20debug%20junk%0Apick%20479442a%20add%20tests%0A",
+      "git rebase --continue"
+    ],
+    ["git status"]
+  ]
+}

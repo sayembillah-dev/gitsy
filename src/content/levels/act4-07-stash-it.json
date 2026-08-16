@@ -1,0 +1,68 @@
+{
+  "id": "act4-07-stash-it",
+  "act": 4,
+  "title": "Stash it",
+  "brief": "You are halfway through an edit to `app.txt` on main when you need to check something on the `feature` branch. Try `git switch feature` and read what git says: your half-done edit overlaps with files the switch would overwrite, so git refuses. It is protecting your work.\n\n`git stash` shelves all tracked changes into a real commit object hanging off HEAD, then resets the tree clean. Go look at feature, come back to main, and `git stash pop` brings the work back, unstaged, exactly as you left it.\n\nEnd state: back on main with the work restored AND committed as \"finish the experiment\". The pop proves nothing was lost; the commit proves the work is real.",
+  "setup": [
+    { "op": "commit", "message": "app v1", "files": { "app.txt": "app v1\n" } },
+    { "op": "branch", "name": "feature" },
+    { "op": "checkout", "ref": "feature" },
+    { "op": "commit", "message": "feature sketch", "files": { "app.txt": "app v1\nfeature sketch\n" } },
+    { "op": "checkout", "ref": "main" },
+    { "op": "write", "path": "app.txt", "content": "app v1\nhalf-done\n" }
+  ],
+  "unlocked": ["status", "log", "switch", "stash", "add", "commit"],
+  "goals": [
+    {
+      "assert": "headIsOn",
+      "args": ["main"],
+      "label": "Back on main"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "finish the experiment"],
+      "label": "The rescued work is committed"
+    },
+    {
+      "assert": "fileInCommit",
+      "args": ["main", "app.txt", "app v1\nhalf-done\n"],
+      "label": "The half-done edit survived the round trip"
+    },
+    {
+      "assert": "stashCount",
+      "args": [0],
+      "label": "The stash is empty again"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "diagnostics": [
+    {
+      "when": "fileModified",
+      "args": ["app.txt"],
+      "say": "That dirty file is why git refuses the switch: app.txt differs between the branches, and switching would overwrite your edit. git stash shelves it first."
+    }
+  ],
+  "hints": [
+    "Try the switch first and read the refusal. Then: git stash.",
+    "git stash, git switch feature, git switch main, git stash pop. Now the edit is back, unstaged.",
+    "Finish: git add app.txt, git commit -m \"finish the experiment\"."
+  ],
+  "par": 6,
+  "solution": [
+    "git stash",
+    "git switch feature",
+    "git switch main",
+    "git stash pop",
+    "git add app.txt",
+    "git commit -m \"finish the experiment\""
+  ],
+  "wrongSolutions": [
+    ["git switch feature"],
+    ["git stash", "git switch feature", "git switch main", "git stash pop"],
+    ["git status"]
+  ]
+}

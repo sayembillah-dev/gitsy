@@ -1,0 +1,48 @@
+{
+  "id": "act5-05-a-second-worktree",
+  "act": 5,
+  "title": "A second worktree",
+  "brief": "Production needs a hotfix branch right now, but your main checkout is full of half-done rework. Switching means stash gymnastics; cloning again means waiting. Real git has a third door: `git worktree add` checks out a SECOND working directory from the same repository, with its own branch, sharing the one object store.\n\nCreate one: `git worktree add -b hotfix hotfix-dir` makes the branch `hotfix` and checks it out in `hotfix-dir`, while your dirty main stays exactly as it is. Confirm with `git worktree list`.\n\nOne rule explains the design: a branch can be checked out in only one worktree at a time. Try `git switch hotfix` afterwards (not part of the solution) and read the refusal.",
+  "setup": [
+    { "op": "commit", "message": "app v1", "files": { "app.txt": "app v1\n" } },
+    { "op": "write", "path": "app.txt", "content": "app v1\nhalf-done rework\n" }
+  ],
+  "unlocked": ["status", "log", "worktree", "switch"],
+  "goals": [
+    {
+      "assert": "worktreeExists",
+      "args": ["hotfix-dir"],
+      "label": "The linked worktree exists"
+    },
+    {
+      "assert": "refExists",
+      "args": ["hotfix"],
+      "label": "The hotfix branch exists"
+    },
+    {
+      "assert": "headIsOn",
+      "args": ["main"],
+      "label": "You are still on main"
+    },
+    {
+      "assert": "fileModified",
+      "args": ["app.txt"],
+      "label": "Your half-done rework is untouched"
+    }
+  ],
+  "hints": [
+    "git worktree add -b hotfix hotfix-dir",
+    "git worktree list shows both checkouts: main here, hotfix in hotfix-dir.",
+    "The branch-exclusivity rule is the lesson: the worktree OWNS hotfix until you git worktree remove it."
+  ],
+  "par": 2,
+  "solution": [
+    "git worktree add -b hotfix hotfix-dir",
+    "git worktree list"
+  ],
+  "wrongSolutions": [
+    ["git branch hotfix"],
+    ["git switch -c hotfix"],
+    ["git status"]
+  ]
+}

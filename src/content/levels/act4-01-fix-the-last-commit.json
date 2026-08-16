@@ -1,0 +1,51 @@
+{
+  "id": "act4-01-fix-the-last-commit",
+  "act": 4,
+  "title": "Fix the last commit",
+  "brief": "Welcome to Act 4: rewriting. Everything so far treated history as permanent. It is not: it is just expensive to change once shared. Until it is shared, it is yours.\n\nYou just committed `app.txt` as \"add app v1\", but you forgot `config.txt` and the message should say so. A second commit would tell the story of your mistake; nobody needs that story.\n\nCreate `config.txt` in the editor (content `debug = false`), stage it, then redo the last commit in place: `git commit --amend -m \"add app v1 with config\"`. Watch the graph: the old commit does not vanish, it fades. Amend replaces; nothing moves.",
+  "setup": [
+    { "op": "commit", "message": "add app v1", "files": { "app.txt": "app v1\n" } }
+  ],
+  "unlocked": ["status", "log", "add", "commit", "diff"],
+  "goals": [
+    {
+      "assert": "commitCount",
+      "args": ["main", 1],
+      "label": "Still exactly one commit"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "add app v1 with config"],
+      "label": "The commit is renamed"
+    },
+    {
+      "assert": "fileInCommit",
+      "args": ["main", "config.txt"],
+      "label": "config.txt is inside the commit"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "Create config.txt with the editor's new-file button, stage it, then amend.",
+    "git add config.txt, then git commit --amend -m \"add app v1 with config\".",
+    "Amend builds a NEW commit with the old commit's parent and swaps the branch to it. The ghost on the graph is the original."
+  ],
+  "par": 3,
+  "solution": [
+    "edit-file: config.txt debug%20%3D%20false%0A",
+    "git add config.txt",
+    "git commit --amend -m \"add app v1 with config\""
+  ],
+  "wrongSolutions": [
+    [
+      "edit-file: config.txt debug%20%3D%20false%0A",
+      "git add config.txt",
+      "git commit -m \"add config\""
+    ],
+    ["git status"]
+  ]
+}

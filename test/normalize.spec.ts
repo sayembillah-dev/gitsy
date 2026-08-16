@@ -12,6 +12,9 @@ const base: RawRepo = {
   head: { type: 'branch', name: 'main' },
   workingTree: [{ path: 'a.txt', status: 'clean', content: 'two\n' }],
   index: [{ path: 'a.txt', status: 'clean', content: 'two\n' }],
+  stash: [],
+  reflog: [],
+  worktrees: [],
 };
 
 const parentHash = structHashOf('initial', [], { 'a.txt': 'one\n' });
@@ -58,8 +61,24 @@ describe('normalizeRepo', () => {
     expect(snap.head).toEqual({ type: 'detached', at: parentHash });
   });
 
-  it('ships stash and reflog as empty arrays for now', () => {
-    const snap = normalizeRepo(base);
+  it('maps journal-backed stash and reflog entries to structural hashes', () => {
+    const snap = normalizeRepo({
+      ...base,
+      stash: [{ sha: 'aaa111', message: 'WIP on main' }],
+      reflog: [{ sha: 'bbb222', label: 'commit: second' }],
+      worktrees: [{ path: 'wt-dir', branch: 'hotfix' }],
+    });
+    expect(snap.stash).toEqual([{ message: 'WIP on main', hash: parentHash }]);
+    expect(snap.reflog).toEqual([{ hash: childHash, label: 'commit: second' }]);
+    expect(snap.worktrees).toEqual([{ path: 'wt-dir', branch: 'hotfix' }]);
+  });
+
+  it('skips journal entries whose commit is not in the walk', () => {
+    const snap = normalizeRepo({
+      ...base,
+      stash: [{ sha: 'zzz999', message: 'ghost' }],
+      reflog: [{ sha: 'zzz999', label: 'ghost' }],
+    });
     expect(snap.stash).toEqual([]);
     expect(snap.reflog).toEqual([]);
   });

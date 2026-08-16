@@ -1,0 +1,45 @@
+{
+  "id": "act5-04-the-pickaxe",
+  "act": 5,
+  "title": "The pickaxe",
+  "brief": "An API key (`hunter2`) briefly lived in this repo. Security wants the full story: when did it appear, and when did it leave. `git log` alone will not tell you: you need the commits where the string's footprint actually changed.\n\n`git log -S hunter2 --oneline` (the \"pickaxe\") lists exactly those commits: the one that added the key and the one that scrubbed it.\n\nRun the pickaxe, then check out the scrub commit to verify what it did. Detached HEAD is fine: you are inspecting, not building.",
+  "setup": [
+    { "op": "commit", "message": "add app", "files": { "app.txt": "app\n" } },
+    { "op": "commit", "message": "add secrets", "files": { "secrets.txt": "api_key = hunter2\n" } },
+    { "op": "commit", "message": "add feature", "files": { "feature.txt": "feature\n" } },
+    { "op": "commit", "message": "remove the leaked key", "files": { "secrets.txt": "api_key = REDACTED\n" } },
+    { "op": "commit", "message": "add docs", "files": { "README.md": "# app\n" } }
+  ],
+  "unlocked": ["status", "log", "checkout", "diff"],
+  "goals": [
+    {
+      "assert": "detachedHead",
+      "args": [],
+      "label": "You detached HEAD to inspect"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "remove the leaked key"],
+      "label": "You are at the scrub commit"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["HEAD", 4],
+      "label": "Four commits visible from here"
+    }
+  ],
+  "hints": [
+    "git log -S hunter2 --oneline. Two commits come up: the leak and the scrub.",
+    "git checkout <sha> of the LATER one (the scrub).",
+    "The pickaxe counts occurrences per commit and reports where the count changed. It answers 'when did this text change', which message-search cannot."
+  ],
+  "par": 2,
+  "solution": [
+    "git log -S hunter2 --oneline",
+    "git checkout 420b866"
+  ],
+  "wrongSolutions": [
+    ["git checkout bbaab10"],
+    ["git log --oneline"]
+  ]
+}

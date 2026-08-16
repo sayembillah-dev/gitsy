@@ -18,12 +18,15 @@ export default function Terminal({
   onComplete,
   onSnapshot,
   onEvaluation,
+  onRewrites,
 }: {
   session: TerminalSession;
   history: string[];
   onComplete?: () => void;
   onSnapshot?: (snapshot: import('@/core/types').RepoSnapshot) => void;
   onEvaluation?: (evaluation: import('@/core/types').EvaluationResult) => void;
+  /** Fires when a command rewrote history; the graph morphs on this. */
+  onRewrites?: (rewrites: import('@/core/types').CommandResult['rewrites']) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const completedRef = useRef(false);
@@ -87,6 +90,7 @@ export default function Terminal({
         }
         if (r.snapshot) onSnapshot?.(r.snapshot);
         if (r.evaluation) onEvaluation?.(r.evaluation);
+        onRewrites?.(r.rewrites);
         if (line && !session.inPatch) {
           localHistory.push(line);
           histIdx = localHistory.length;

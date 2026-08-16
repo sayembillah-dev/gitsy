@@ -1,0 +1,45 @@
+{
+  "id": "act4-03-revert-dont-rewrite",
+  "act": 4,
+  "title": "Revert, don't rewrite",
+  "brief": "\"add telemetry\" broke production. Your instinct now might be `git reset --hard` to erase it. But this history is SHARED: pretend main is already on every teammate's machine. Resetting shared history forces everyone else to repair theirs.\n\n`git revert <commit>` does the opposite: it adds a NEW commit that applies the exact anti-change. History stays append-only; the bad commit stays visible; the effect disappears.\n\nRevert the telemetry commit. The docs commit on top must survive.",
+  "setup": [
+    { "op": "commit", "message": "add app v1", "files": { "app.txt": "app v1\n" } },
+    { "op": "commit", "message": "add telemetry", "files": { "app.txt": "app v1\ntelemetry: on\n" } },
+    { "op": "commit", "message": "add docs", "files": { "README.md": "# app\n" } }
+  ],
+  "unlocked": ["status", "log", "revert", "diff"],
+  "goals": [
+    {
+      "assert": "commitReachable",
+      "args": ["main", "Revert \"add telemetry\""],
+      "label": "The telemetry commit is reverted (not erased)"
+    },
+    {
+      "assert": "fileInCommit",
+      "args": ["main", "app.txt", "app v1\n"],
+      "label": "app.txt is back to v1"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "add docs"],
+      "label": "The docs commit survived"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["main", 4],
+      "label": "Four commits: history only grew"
+    }
+  ],
+  "hints": [
+    "The telemetry commit is one below the tip: HEAD~1.",
+    "git revert HEAD~1 creates the anti-commit. No staging needed: revert commits directly.",
+    "Read the graph afterwards: 'add telemetry' is still there, and that is the point. Revert is the shared-history-safe undo."
+  ],
+  "par": 1,
+  "solution": ["git revert HEAD~1"],
+  "wrongSolutions": [
+    ["git reset --hard HEAD~2"],
+    ["git log"]
+  ]
+}

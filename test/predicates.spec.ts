@@ -250,6 +250,39 @@ describe('predicate registry: tags, remotes, reachability', () => {
   });
 });
 
+describe('predicate registry: Act 4/5 additions', () => {
+  it('fileInCommit: path presence and exact content at a ref tip', () => {
+    const { snap, c2 } = linearSnap();
+    expect(run('fileInCommit', snap, 'feature', 'a.txt')).toBe(true);
+    expect(run('fileInCommit', snap, 'feature', 'a.txt', 'two\n')).toBe(true);
+    expect(run('fileInCommit', snap, 'feature', 'a.txt', 'three\n')).toBe(false);
+    expect(run('fileInCommit', snap, 'feature', 'missing.txt')).toBe(false);
+    expect(run('fileInCommit', snap, 'gone', 'a.txt')).toBe(false);
+    expect(run('fileInCommit', snap, c2.hash, 'a.txt', 'two\n')).toBe(true);
+  });
+
+  it('worktreeExists: linked worktree by display path', () => {
+    const snap = makeSnap({ worktrees: [{ path: 'hotfix-dir', branch: 'hotfix' }] });
+    expect(run('worktreeExists', snap, 'hotfix-dir')).toBe(true);
+    expect(run('worktreeExists', snap, 'other')).toBe(false);
+    expect(run('worktreeExists', makeSnap(), 'hotfix-dir')).toBe(false);
+  });
+
+  it('reflogContains: substring match over reflog labels', () => {
+    const { c1 } = chainGraph();
+    const snap = makeSnap({
+      reflog: [
+        { hash: c1.hash, label: 'reset: moving to HEAD~2' },
+        { hash: c1.hash, label: 'commit: add app v1' },
+      ],
+    });
+    expect(run('reflogContains', snap, 'reset: moving to HEAD~2')).toBe(true);
+    expect(run('reflogContains', snap, 'moving')).toBe(true);
+    expect(run('reflogContains', snap, 'cherry-pick')).toBe(false);
+    expect(run('reflogContains', makeSnap(), 'anything')).toBe(false);
+  });
+});
+
 describe('predicate registry: helpers', () => {
   it('resolveRefish accepts names, HEAD, and raw hashes', () => {
     const { snap, c1, c2 } = linearSnap();

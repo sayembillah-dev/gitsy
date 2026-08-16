@@ -1,0 +1,49 @@
+{
+  "id": "act4-04-pick-the-fix",
+  "act": 4,
+  "title": "Pick the fix",
+  "brief": "The `fix` branch has two commits: \"fix the crash\" (gold) and \"debug logging\" (junk you never want on main). Merging would take both. You need exactly one commit's change copied onto main.\n\n`git cherry-pick <commit>` computes what that commit changed relative to its parent and replays it onto where you stand. A copy, with a new SHA: the original stays on its branch.\n\nCherry-pick the crash fix onto main. The fix branch's tip is the junk commit; the one you want is right below it: `fix~1`.",
+  "setup": [
+    { "op": "commit", "message": "add app v1", "files": { "app.txt": "app v1\n" } },
+    { "op": "branch", "name": "fix" },
+    { "op": "checkout", "ref": "fix" },
+    { "op": "commit", "message": "fix the crash", "files": { "app.txt": "app v1\ncrash fix\n" } },
+    { "op": "commit", "message": "debug logging", "files": { "debug.txt": "debug\n" } },
+    { "op": "checkout", "ref": "main" }
+  ],
+  "unlocked": ["status", "log", "cherry-pick", "switch", "diff"],
+  "goals": [
+    {
+      "assert": "commitReachable",
+      "args": ["main", "fix the crash"],
+      "label": "The crash fix is on main"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["main", 2],
+      "label": "Only the fix came over (no junk, no merge commit)"
+    },
+    {
+      "assert": "headIsOn",
+      "args": ["main"],
+      "label": "You are on main"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "Stay on main. The target commit is fix~1 (one below the fix tip).",
+    "git cherry-pick fix~1",
+    "Merging fix would fast-forward main to the junk commit. Cherry-pick names exactly the change you want: base-to-theirs is the commit's own diff."
+  ],
+  "par": 1,
+  "solution": ["git cherry-pick fix~1"],
+  "wrongSolutions": [
+    ["git merge fix"],
+    ["git cherry-pick fix"],
+    ["git status"]
+  ]
+}

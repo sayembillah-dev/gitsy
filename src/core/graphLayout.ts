@@ -13,6 +13,9 @@ export interface GraphNode {
   refs: string[];
   isHead: boolean;
   isMerge: boolean;
+  /** Unreachable from every ref (rewritten away, reset away, stashed).
+   *  Rendered faded with --st-ghost (section 4: ghosts never disappear). */
+  ghost: boolean;
 }
 
 export interface GraphEdge {
@@ -44,6 +47,24 @@ export function layoutGraph(snap: RepoSnapshot): GraphLayout {
   }
 
   // Reachable set plus a parent-to-children map.
+  const reachable = new Set<StructHash>();
+  const mark = (h: StructHash): void => {
+    if (reachable.has(h)) return;
+    const commit = snap.commits[h];
+    if (!commit) return;
+    reachable.add(h);
+    commit.parents.forEach(mark);
+  };
+  tips.forEach(mark);
+
+  // Ghosts: commits the snapshot knows about (reflog, stash, a just-rewritten
+  // branch) but no ref reaches. They join the layout as extra tips, after
+  // every real tip, so abandoned work stays visible and faded (section 4).
+  const ghostTips = Object.keys(snap.commits)
+    .filter((h) => !reachable.has(h as StructHash))
+    .sort() as StructHash[];
+  const allTips = [...tips, ...ghostTips];
+
   const inGraph = new Set<StructHash>();
   const children = new Map<StructHash, StructHash[]>();
   const visit = (h: StructHash): void => {
@@ -58,11 +79,11 @@ export function layoutGraph(snap: RepoSnapshot): GraphLayout {
       visit(p);
     }
   };
-  tips.forEach(visit);
+  allTips.forEach(visit);
 
   // Rows: Kahn from the tips (a commit gets a row only after every child has
-  // one). Queue order: tip order first, structural hash as tie-break.
-  const tipRank = new Map(tips.map((t, i) => [t, i]));
+  // one). Queue order: tip order first (ghosts last), hash as tie-break.
+  const tipRank = new Map(allTips.map((t, i) => [t, i]));
   const rank = (h: StructHash) => tipRank.get(h) ?? Number.MAX_SAFE_INTEGER;
   const byOrder = (a: StructHash, b: StructHash) =>
     rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0);
@@ -111,7 +132,7 @@ export function layoutGraph(snap: RepoSnapshot): GraphLayout {
   };
   const byRow = (a: StructHash, b: StructHash) =>
     (row.get(a) ?? 0) - (row.get(b) ?? 0) || byOrder(a, b);
-  for (const tip of [...tips].filter((t) => row.has(t)).sort(byRow)) {
+  for (const tip of [...allTips].filter((t) => row.has(t)).sort(byRow)) {
     if (!lane.has(tip)) assignChain(tip);
   }
   for (const h of [...inGraph].sort(byRow)) {
@@ -139,6 +160,7 @@ export function layoutGraph(snap: RepoSnapshot): GraphLayout {
     refs: refsOf(h),
     isHead: h === headTip,
     isMerge: (snap.commits[h]?.parents.length ?? 0) > 1,
+    ghost: !reachable.has(h),
   }));
 
   const edges: GraphEdge[] = [];

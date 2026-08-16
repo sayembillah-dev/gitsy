@@ -206,6 +206,35 @@ export const predicateRegistry: Record<string, PredicateEntry> = {
     summary: 'Local branch tip and the remote branch tip are the same commit.',
   },
 
+  fileInCommit: {
+    // Tree-content assertion (Act 4 needs it: "the amended commit contains
+    // config.txt", "the squashed commit kept the WIP lines"). Content is
+    // optional; without it, presence is enough.
+    fn: (snap, ref, path, content) => {
+      if (typeof path !== 'string') return false;
+      const start = resolveRefish(snap, ref);
+      if (start === null) return false;
+      const tree = commitMap(snap)[start]?.tree;
+      if (!tree || !(path in tree)) return false;
+      return typeof content === 'string' ? tree[path] === content : true;
+    },
+    summary: 'The commit at ref has path in its tree (optionally with exact content).',
+  },
+
+  worktreeExists: {
+    fn: (snap, path) =>
+      typeof path === 'string' && (snap.worktrees ?? []).some((w) => w.path === path),
+    summary: 'A linked worktree (git worktree add) exists at path.',
+  },
+
+  reflogContains: {
+    // The Act 5 rescue levels: proves the player actually drove HEAD through
+    // the moves the reflog recorded (a no-op state can never fake this).
+    fn: (snap, text) =>
+      typeof text === 'string' && snap.reflog.some((e) => e.label.includes(text)),
+    summary: 'Some reflog entry label contains the given text.',
+  },
+
   stillReachable: {
     // The revert-over-reset teacher: a commit "survives" if any ref, HEAD,
     // stash entry, or reflog entry can still walk to it.

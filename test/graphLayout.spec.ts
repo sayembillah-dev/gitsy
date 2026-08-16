@@ -67,6 +67,26 @@ describe('layoutGraph', () => {
     expect(layout.nodes.find((n) => n.hash === g.c3.hash)?.isHead).toBe(false);
   });
 
+  it('keeps orphaned commits as ghost nodes (rewritten/reset-away work stays visible)', () => {
+    const g = chainGraph();
+    // 'lost work' dangles off c1: present in the object map (the reflog walk
+    // put it there) but reachable from no ref.
+    const lost = makeCommit('lost work', [g.c1.hash], { 'a.txt': 'lost\n' });
+    const layout = layoutGraph(
+      makeSnap({
+        commits: { ...g.commits, [lost.hash]: lost },
+        branches: { main: g.c3.hash },
+      }),
+    );
+    const ghost = layout.nodes.find((n) => n.hash === lost.hash);
+    expect(ghost).toBeDefined();
+    expect(ghost?.ghost).toBe(true);
+    expect(ghost?.refs).toEqual([]);
+    expect(ghost?.lane).toBe(1); // own lane off the shared root
+    expect(layout.nodes.filter((n) => n.ghost)).toHaveLength(1);
+    expect(layout.nodes.every((n) => n.ghost === (n.hash === lost.hash))).toBe(true);
+  });
+
   it('is deterministic across runs', () => {
     const g = mergeGraph();
     const snap = makeSnap({

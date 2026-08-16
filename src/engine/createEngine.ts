@@ -9,6 +9,7 @@ import type {
   GitEngine,
   RepoSnapshot,
   SetupOp,
+  StructHash,
 } from '@/core/types';
 import { execute } from './executor';
 import {
@@ -19,6 +20,7 @@ import {
   type EngineContext,
   type FsLike,
 } from './fsx';
+import { logRef } from './journal';
 import { parseCommand } from './parser';
 import { answerPatch, startPatch, type PatchSession } from './patch';
 import { readRawRepo } from './readState';
@@ -86,13 +88,16 @@ export function createEngine(deps: EngineDeps): EditorEngine {
   const applySetupOp = async (op: SetupOp): Promise<void> => {
     switch (op.op) {
       case 'commit': {
+        const previous = await git
+          .resolveRef({ fs: gitFs, dir: deps.dir, ref: 'HEAD', depth: 10 })
+          .catch(() => null);
         for (const [path, content] of Object.entries(op.files)) {
           await writeTextFile(fs, joinPath(deps.dir, path), content);
           await git.add({ fs: gitFs, dir: deps.dir, filepath: path });
         }
         const timestamp = T0 + setupCommits * 60;
         const who = { ...LEVEL_AUTHOR, timestamp, timezoneOffset: 0 };
-        await git.commit({
+        const sha = await git.commit({
           fs: gitFs,
           dir: deps.dir,
           message: op.message,
@@ -100,6 +105,9 @@ export function createEngine(deps: EngineDeps): EditorEngine {
           committer: who,
         });
         setupCommits += 1;
+        // Setup history must appear in the reflog: Act 5 recovery levels
+        // depend on abandoned setup commits being findable there.
+        await logRef(ctx, 'HEAD', previous, sha, `commit: ${op.message.split('\n')[0]}`);
         return;
       }
       case 'branch':
@@ -177,6 +185,12 @@ export function createEngine(deps: EngineDeps): EditorEngine {
       if (!parsed.ok) {
         return { ok: false, stdout: '', stderr: parsed.stderr + '\n', snapshot: await snapshot() };
       }
+      // Rewriting commands report a SHA-level rewrites map; the contract
+      // carries StructHashes, so convert across the before/after snapshots.
+      const mayRewrite =
+        parsed.command.cmd === 'rebase' ||
+        (parsed.command.cmd === 'commit' && parsed.command.amend);
+      const before = mayRewrite ? await snapshot() : null;
       let out;
       try {
         if (parsed.command.cmd === 'add' && parsed.command.patch) {
@@ -197,7 +211,30 @@ export function createEngine(deps: EngineDeps): EditorEngine {
           stderr: `fatal: ${err instanceof Error ? err.message : String(err)}\n`,
         };
       }
-      return { ok: out.ok, stdout: out.stdout, stderr: out.stderr, snapshot: await snapshot() };
+      const after = await snapshot();
+      let rewrites: Record<StructHash, StructHash> | undefined;
+      if (out.rewrites && before) {
+        const beforeBySha = new Map(
+          Object.values(before.commits).map((c) => [c.sha, c.hash] as const),
+        );
+        const afterBySha = new Map(
+          Object.values(after.commits).map((c) => [c.sha, c.hash] as const),
+        );
+        const mapped: Record<StructHash, StructHash> = {};
+        for (const [oldSha, newSha] of Object.entries(out.rewrites)) {
+          const oldHash = beforeBySha.get(oldSha);
+          const newHash = afterBySha.get(newSha);
+          if (oldHash && newHash) mapped[oldHash] = newHash;
+        }
+        if (Object.keys(mapped).length > 0) rewrites = mapped;
+      }
+      return {
+        ok: out.ok,
+        stdout: out.stdout,
+        stderr: out.stderr,
+        snapshot: after,
+        ...(rewrites ? { rewrites } : {}),
+      };
     },
 
     async answer(input: string): Promise<CommandResult> {

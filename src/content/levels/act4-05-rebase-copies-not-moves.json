@@ -1,0 +1,61 @@
+{
+  "id": "act4-05-rebase-copies-not-moves",
+  "act": 4,
+  "title": "Rebase copies; it does not move",
+  "brief": "This is the Act 4 cliff, so: observation first. `feature` forked from main one commit ago. Meanwhile main moved. You want feature's work to sit on top of the NEW main, in a straight line, with no merge commit.\n\n`git rebase main` (run while ON feature) replays feature's commits one by one onto main's tip. Read that again: replays. Each replayed commit is a brand new commit object with a new hash. The originals stay in the object store, abandoned, faded on the graph.\n\nDo it: switch to feature and rebase it onto main. Then look at the graph and find the ghost.",
+  "setup": [
+    { "op": "commit", "message": "initial commit", "files": { "app.txt": "app v1\n" } },
+    { "op": "branch", "name": "feature" },
+    { "op": "checkout", "ref": "feature" },
+    { "op": "commit", "message": "feature work", "files": { "feature.txt": "feature\n" } },
+    { "op": "checkout", "ref": "main" },
+    { "op": "commit", "message": "main moves on", "files": { "app.txt": "app v2\n" } }
+  ],
+  "unlocked": ["status", "log", "switch", "rebase", "diff"],
+  "goals": [
+    {
+      "assert": "headIsOn",
+      "args": ["feature"],
+      "label": "You are on feature"
+    },
+    {
+      "assert": "isAncestor",
+      "args": ["main", "feature"],
+      "label": "main is now underneath feature"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["feature", "feature work"],
+      "label": "The feature work survived the replay"
+    },
+    {
+      "assert": "noMergeCommits",
+      "args": ["feature"],
+      "label": "Straight line, no merge commit"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["feature", 3],
+      "label": "Three commits: initial, main moves, feature work"
+    }
+  ],
+  "diagnostics": [
+    {
+      "when": "headIsOn",
+      "args": ["main"],
+      "say": "Rebase moves the branch you are ON. Get onto feature first: git switch feature."
+    }
+  ],
+  "hints": [
+    "git switch feature, then git rebase main.",
+    "If you rebased while on main, git answered 'up to date': main is already based on itself. Switch first.",
+    "Merging main INTO feature would also combine them, but with a merge commit and the lines crossed. Rebase makes the straight line."
+  ],
+  "par": 2,
+  "solution": ["git switch feature", "git rebase main"],
+  "wrongSolutions": [
+    ["git rebase main"],
+    ["git switch feature", "git merge main"],
+    ["git status"]
+  ]
+}

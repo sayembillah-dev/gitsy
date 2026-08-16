@@ -10,6 +10,7 @@ import git, { STAGE, TREE } from 'isomorphic-git';
 import type { RawCommit, RawRepo } from '@/core/normalize';
 import type { FileEntry } from '@/core/types';
 import { joinPath, pathExists, readTextFile, type EngineContext } from './fsx';
+import { readReflog, readStashStack, readWorktrees } from './journal';
 
 /** [path, HEAD, workdir, stage] codes, same shape as isomorphic-git's
  *  statusMatrix so executor logic mirrors real git semantics. */
@@ -226,14 +227,28 @@ export async function readRawRepo(ctx: EngineContext): Promise<RawRepo> {
     ? { type: 'branch' as const, name: headRaw.slice(5).replace(/^refs\/heads\//, '') }
     : { type: 'detached' as const, sha: headRaw };
 
+  // Engine journals (Phase 10): stash stack, reflog, worktree registry.
+  const [stashStack, reflogEntries, worktrees] = await Promise.all([
+    readStashStack(ctx),
+    readReflog(ctx),
+    readWorktrees(ctx),
+  ]);
+
   // Tracking tips join the walk: fetched objects live in the LOCAL object
-  // store, and origin/main must appear in snap.commits to be drawable.
+  // store, and origin/main must appear in snap.commits to be drawable. Stash
+  // and reflog SHAs join too: orphaned commits are exactly what the graph
+  // renders faded (section 4) and what stillReachable consults.
   const tips = new Set<string>([
     ...Object.values(branches),
     ...Object.values(tags),
     ...Object.values(remoteBranches),
   ]);
   if (head.type === 'detached') tips.add(head.sha);
+  for (const entry of stashStack) tips.add(entry.sha);
+  for (const entry of reflogEntries) {
+    tips.add(entry.to);
+    if (entry.from) tips.add(entry.from);
+  }
 
   const commits = new Map<string, RawCommit>();
   for (const tip of tips) {
@@ -257,7 +272,14 @@ export async function readRawRepo(ctx: EngineContext): Promise<RawRepo> {
   const rows = await statusRows(ctx);
   const stageOidMap = await indexOids(ctx);
   const workdir = await workdirFiles(ctx);
-  const merging = await pathExists(ctx.fs, joinPath(ctx.dir, '.git', 'MERGE_HEAD'));
+  // Mid-merge marker files surface as conflicts. That holds for every
+  // sequencer state: merge (Phase 4), revert/cherry-pick, and a rebase
+  // stopped at a conflict (Phase 10).
+  const merging =
+    (await pathExists(ctx.fs, joinPath(ctx.dir, '.git', 'MERGE_HEAD'))) ||
+    (await pathExists(ctx.fs, joinPath(ctx.dir, '.git', 'REVERT_HEAD'))) ||
+    (await pathExists(ctx.fs, joinPath(ctx.dir, '.git', 'CHERRY_PICK_HEAD'))) ||
+    (await pathExists(ctx.fs, joinPath(ctx.dir, '.git', 'gitsy-rebase.json')));
   const { workingTree, index } = await filePanels(ctx, rows, stageOidMap, workdir, merging);
 
   return {
@@ -268,5 +290,9 @@ export async function readRawRepo(ctx: EngineContext): Promise<RawRepo> {
     head,
     workingTree,
     index,
+    // Stash and reflog surface newest-first, the way the commands print them.
+    stash: stashStack.map((s) => ({ sha: s.sha, message: s.message })).reverse(),
+    reflog: reflogEntries.map((e) => ({ sha: e.to, label: e.label })).reverse(),
+    worktrees: worktrees.map((w) => ({ path: w.path, branch: w.branch })),
   };
 }

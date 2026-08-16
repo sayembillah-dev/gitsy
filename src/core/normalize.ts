@@ -27,6 +27,12 @@ export interface RawRepo {
   head: { type: 'branch'; name: string } | { type: 'detached'; sha: string };
   workingTree: FileEntry[];
   index: FileEntry[];
+  /** Stash stack entries (newest first), from the engine journal (Act 4). */
+  stash: { sha: string; message: string }[];
+  /** Reflog entries (newest first), from the engine journal (Act 5). */
+  reflog: { sha: string; label: string }[];
+  /** Linked worktrees, from the engine journal (Act 5). */
+  worktrees: { path: string; branch: string }[];
 }
 
 /**
@@ -92,6 +98,16 @@ export function normalizeRepo(raw: RawRepo): RepoSnapshot {
       ? { type: 'branch', name: raw.head.name }
       : { type: 'detached', at: hashOf(raw.head.sha) };
 
+  // Journal-backed fields (Phase 10). Entries whose commit did not survive
+  // into the walk are skipped defensively; readState normally guarantees
+  // their presence by adding them to the walk tips.
+  const stash = raw.stash
+    .filter((s) => bySha.has(s.sha))
+    .map((s) => ({ message: s.message, hash: hashOf(s.sha) }));
+  const reflog = raw.reflog
+    .filter((r) => bySha.has(r.sha))
+    .map((r) => ({ hash: hashOf(r.sha), label: r.label }));
+
   return {
     commits,
     branches: mapRefs(raw.branches),
@@ -100,7 +116,8 @@ export function normalizeRepo(raw: RawRepo): RepoSnapshot {
     head,
     workingTree: raw.workingTree,
     index: raw.index,
-    stash: [], // Act 4
-    reflog: [], // Act 5 synthesizes this from the persisted command log
+    stash,
+    reflog,
+    worktrees: raw.worktrees,
   };
 }

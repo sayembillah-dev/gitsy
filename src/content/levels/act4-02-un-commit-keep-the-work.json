@@ -1,0 +1,48 @@
+{
+  "id": "act4-02-un-commit-keep-the-work",
+  "act": 4,
+  "title": "Un-commit, keep the work",
+  "brief": "The last commit (\"add marketing page\") went in too early and with the wrong story. The WORK is good; the COMMIT is wrong. You want to un-commit it and recommit it properly.\n\n`git reset` moves the branch pointer back. Its three modes decide what happens to the other two trees: `--hard` also rewrites the index and the workdir (the work is GONE), `--mixed` resets the index but keeps your files, and `--soft` keeps index and files exactly as they are.\n\nYou want the page to stay staged for an instant recommit. That is `--soft`. Then commit again with the right message: \"add landing page\".",
+  "setup": [
+    { "op": "commit", "message": "add app v1", "files": { "app.txt": "app v1\n" } },
+    { "op": "commit", "message": "add marketing page", "files": { "page.txt": "<h1>buy now</h1>\n" } }
+  ],
+  "unlocked": ["status", "log", "reset", "add", "commit", "diff"],
+  "goals": [
+    {
+      "assert": "commitCount",
+      "args": ["main", 2],
+      "label": "Two commits total"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "add landing page"],
+      "label": "The recommit tells the right story"
+    },
+    {
+      "assert": "fileInCommit",
+      "args": ["main", "page.txt"],
+      "label": "The page survived the un-commit"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "git reset --soft HEAD~1 moves main back one commit but leaves page.txt staged.",
+    "Then git commit -m \"add landing page\".",
+    "--hard would have deleted page.txt from disk. --mixed would have kept the file but unstaged it. --soft keeps the stage, which is why it is one commit command away from done."
+  ],
+  "par": 2,
+  "solution": [
+    "git reset --soft HEAD~1",
+    "git commit -m \"add landing page\""
+  ],
+  "wrongSolutions": [
+    ["git reset --hard HEAD~1"],
+    ["git reset --soft HEAD~1"],
+    ["git status"]
+  ]
+}

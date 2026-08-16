@@ -40,6 +40,8 @@ export interface RepoSnapshot {
   index: FileEntry[];
   stash: { message: string; hash: StructHash }[];
   reflog: { hash: StructHash; label: string }[];
+  /** Present from Act 5 onward: linked worktrees (git worktree add). */
+  worktrees?: { path: string; branch: string }[];
   /** Present from Act 3 onward. The simulated remote, same shape. */
   remote?: Omit<RepoSnapshot, 'remote'>;
 }
@@ -49,6 +51,13 @@ export interface CommandResult {
   stdout: string;
   stderr: string;           // real git error text: this is teaching material
   snapshot: RepoSnapshot;
+  /**
+   * Old-to-new structural hashes when a command rewrote history (amend,
+   * rebase). The renderer morphs old nodes into new ones and fades the
+   * originals to --st-ghost (BUILD-PLAN phase 4: the one sanctioned type
+   * change). Absent for non-rewriting commands.
+   */
+  rewrites?: Record<StructHash, StructHash>;
 }
 
 // ---- Levels -------------------------------------------------------------

@@ -9,13 +9,14 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { getLevel, levelList } from '@/content';
 import { levelDefOf } from '@/core/levelSchema';
-import type { EvaluationResult, RepoSnapshot } from '@/core/types';
+import type { EvaluationResult, RepoSnapshot, StructHash } from '@/core/types';
 import { getEngine } from '@/engine/engineClient';
 import FileEditor from './FileEditor';
 import GraphSvg from './GraphSvg';
 import { loadLog, setLog } from './persist';
 import { commandCountOf, replayEntries } from './replay';
 import { useGameStore } from './store';
+import { sendTelemetry } from './telemetry';
 import Terminal from './Terminal';
 import { TerminalSession } from './terminalCore';
 import ThreeTrees from './ThreeTrees';
@@ -33,10 +34,30 @@ export default function GameShell({ levelId }: { levelId: string }) {
   const [editing, setEditing] = useState<{ path: string | null; content: string } | null>(null);
   /** Bumped on undo/reset so the Terminal remounts against the new session. */
   const [termEpoch, setTermEpoch] = useState(0);
+  /** Rewrite map from the last history-rewriting command (graph morph). */
+  const [rewrites, setRewrites] = useState<Record<StructHash, StructHash> | undefined>(undefined);
   const booted = useRef(false);
   const idleRef = useRef<number>(0);
+  /** Telemetry: one event per attempt, on the first completion. */
+  const startedAt = useRef(Date.now());
+  const telemetrySent = useRef(false);
 
   const logLength = useGameStore((s) => s.commandLog.length);
+
+  /** First completion of the current attempt: celebrate + fire-and-forget
+   *  telemetry. Boot/rewind restores of an already-complete log skip this. */
+  const markComplete = () => {
+    setDone(true);
+    if (!telemetrySent.current && level) {
+      telemetrySent.current = true;
+      sendTelemetry({
+        levelId: level.id,
+        log: useGameStore.getState().commandLog,
+        outcome: 'complete',
+        durationMs: Date.now() - startedAt.current,
+      });
+    }
+  };
 
   // Boot: buildLevel, then replay the persisted log. The log is the save
   // file; a refresh restores exact progress.
@@ -116,6 +137,9 @@ export default function GameShell({ levelId }: { levelId: string }) {
     setDone(s.evaluation?.complete ?? false);
     setHint(null);
     setEditing(null);
+    setRewrites(undefined);
+    startedAt.current = Date.now();
+    telemetrySent.current = false;
     setSession(s);
     setTermEpoch((n) => n + 1);
   };
@@ -204,9 +228,10 @@ export default function GameShell({ levelId }: { levelId: string }) {
               key={termEpoch}
               session={session}
               history={useGameStore.getState().commandLog}
-              onComplete={() => setDone(true)}
+              onComplete={markComplete}
               onSnapshot={setSnapshot}
               onEvaluation={setEvalState}
+              onRewrites={setRewrites}
             />
           ) : (
             <p className="p-4 font-mono text-sm text-ink-dim">booting the git engine…</p>
@@ -255,7 +280,7 @@ export default function GameShell({ levelId }: { levelId: string }) {
             </p>
             <div className="p-2">
               {snapshot ? (
-                <GraphSvg snapshot={snapshot} />
+                <GraphSvg snapshot={snapshot} rewrites={rewrites} />
               ) : (
                 <p className="p-3 font-mono text-xs text-ink-dim">waiting for the engine…</p>
               )}
@@ -273,7 +298,7 @@ export default function GameShell({ levelId }: { levelId: string }) {
             void session.editFile(path, content).then((r) => {
               setSnapshot(r.snapshot);
               if (session.evaluation) setEvalState(session.evaluation);
-              if (r.complete) setDone(true);
+              if (r.complete) markComplete();
               if (r.ok) setEditing(null);
             });
           }}

@@ -31,7 +31,7 @@ describe('parseCommand', () => {
   it('parses commit -m variants', () => {
     expect(parseCommand('git commit -m "hello world"')).toEqual({
       ok: true,
-      command: { cmd: 'commit', messages: ['hello world'], allowEmpty: false },
+      command: { cmd: 'commit', messages: ['hello world'], allowEmpty: false, amend: false, noEdit: false },
     });
     const multi = parseCommand('git commit -m "title" -m "body"');
     expect(multi.ok && multi.command.cmd === 'commit' ? multi.command.messages : []).toEqual([
@@ -66,9 +66,108 @@ describe('parseCommand', () => {
   });
 
   it('routes later-act commands to unsupported', () => {
+    // Phase 10 made rebase/stash/reflog real; show/rm/mv/config stay parked.
+    expect(parseCommand('git show HEAD')).toEqual({
+      ok: true,
+      command: { cmd: 'unsupported', name: 'show', args: ['HEAD'] },
+    });
+  });
+
+  it('parses the Act 4 grammar', () => {
+    expect(parseCommand('git commit --amend -m "fixed"')).toEqual({
+      ok: true,
+      command: { cmd: 'commit', messages: ['fixed'], allowEmpty: false, amend: true, noEdit: false },
+    });
+    expect(parseCommand('git revert HEAD~1')).toEqual({
+      ok: true,
+      command: { cmd: 'revert', ref: 'HEAD~1' },
+    });
+    expect(parseCommand('git cherry-pick fix~1')).toEqual({
+      ok: true,
+      command: { cmd: 'cherry-pick', ref: 'fix~1' },
+    });
     expect(parseCommand('git rebase -i main')).toEqual({
       ok: true,
-      command: { cmd: 'unsupported', name: 'rebase', args: ['-i', 'main'] },
+      command: {
+        cmd: 'rebase',
+        interactive: true,
+        onto: null,
+        upstream: 'main',
+        branch: null,
+        continueRebase: false,
+        abort: false,
+      },
+    });
+    expect(parseCommand('git rebase --continue')).toEqual({
+      ok: true,
+      command: {
+        cmd: 'rebase',
+        interactive: false,
+        onto: null,
+        upstream: null,
+        branch: null,
+        continueRebase: true,
+        abort: false,
+      },
+    });
+    expect(parseCommand('git stash')).toEqual({
+      ok: true,
+      command: { cmd: 'stash', sub: 'push', message: null },
+    });
+    expect(parseCommand('git stash push -m "hold this"')).toEqual({
+      ok: true,
+      command: { cmd: 'stash', sub: 'push', message: 'hold this' },
+    });
+    expect(parseCommand('git stash pop')).toEqual({
+      ok: true,
+      command: { cmd: 'stash', sub: 'pop', message: null },
+    });
+  });
+
+  it('parses the Act 5 grammar', () => {
+    expect(parseCommand('git reflog')).toEqual({
+      ok: true,
+      command: { cmd: 'reflog', ref: null },
+    });
+    expect(parseCommand('git reflog main')).toEqual({
+      ok: true,
+      command: { cmd: 'reflog', ref: 'main' },
+    });
+    expect(parseCommand('git bisect start HEAD HEAD~5')).toEqual({
+      ok: true,
+      command: { cmd: 'bisect', sub: 'start', refs: ['HEAD', 'HEAD~5'] },
+    });
+    expect(parseCommand('git bisect good')).toEqual({
+      ok: true,
+      command: { cmd: 'bisect', sub: 'good', refs: [] },
+    });
+    expect(parseCommand('git blame app.txt')).toEqual({
+      ok: true,
+      command: { cmd: 'blame', file: 'app.txt' },
+    });
+    expect(parseCommand('git blame -C -M app.txt')).toEqual({
+      ok: true,
+      command: { cmd: 'blame', file: 'app.txt' },
+    });
+    expect(parseCommand('git log -S hunter2 --oneline')).toEqual({
+      ok: true,
+      command: { cmd: 'log', oneline: true, maxCount: null, pickaxe: 'hunter2' },
+    });
+    expect(parseCommand('git log -S "api key"')).toEqual({
+      ok: true,
+      command: { cmd: 'log', oneline: false, maxCount: null, pickaxe: 'api key' },
+    });
+    expect(parseCommand('git worktree add -b hotfix hotfix-dir')).toEqual({
+      ok: true,
+      command: { cmd: 'worktree', sub: 'add', path: 'hotfix-dir', branch: 'hotfix', createBranch: true },
+    });
+    expect(parseCommand('git worktree list')).toEqual({
+      ok: true,
+      command: { cmd: 'worktree', sub: 'list', path: null, branch: null, createBranch: false },
+    });
+    expect(parseCommand('git switch --detach HEAD~1')).toEqual({
+      ok: true,
+      command: { cmd: 'switch', name: 'HEAD~1', create: false, detach: true },
     });
   });
 
@@ -94,15 +193,15 @@ describe('parseCommand', () => {
   it('parses log flags', () => {
     expect(parseCommand('git log --oneline -3')).toEqual({
       ok: true,
-      command: { cmd: 'log', oneline: true, maxCount: 3 },
+      command: { cmd: 'log', oneline: true, maxCount: 3, pickaxe: null },
     });
     expect(parseCommand('git log --max-count=2')).toEqual({
       ok: true,
-      command: { cmd: 'log', oneline: false, maxCount: 2 },
+      command: { cmd: 'log', oneline: false, maxCount: 2, pickaxe: null },
     });
     expect(parseCommand('git log -n 4')).toEqual({
       ok: true,
-      command: { cmd: 'log', oneline: false, maxCount: 4 },
+      command: { cmd: 'log', oneline: false, maxCount: 4, pickaxe: null },
     });
   });
 
