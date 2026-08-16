@@ -15,6 +15,18 @@ export type ParsedCommand =
   | { cmd: 'merge'; branch: string }
   | { cmd: 'tag'; name: string }
   | { cmd: 'reset'; mode: 'soft' | 'mixed' | 'hard'; target: string | null }
+  | { cmd: 'remote'; verbose: boolean }
+  | { cmd: 'fetch'; remote: string }
+  | { cmd: 'pull'; remote: string }
+  | {
+      cmd: 'push';
+      remote: string;
+      branch: string | null;
+      force: boolean;
+      forceWithLease: boolean;
+      setUpstream: boolean;
+    }
+  | { cmd: 'clone' }
   | { cmd: 'unsupported'; name: string; args: string[] };
 
 export type ParseResult =
@@ -24,7 +36,6 @@ export type ParseResult =
 // Real git commands Gitsy does not teach yet. The terminal gate (Phase 3)
 // turns these into the in-fiction "not yet unlocked" message.
 const LATER_COMMANDS = new Set([
-  'remote', 'clone', 'fetch', 'push', 'pull',
   'revert', 'cherry-pick', 'rebase', 'stash',
   'reflog', 'bisect', 'blame', 'worktree', 'show', 'rm', 'mv', 'config',
 ]);
@@ -43,6 +54,10 @@ const USAGE: Record<string, string> = {
   merge: 'usage: git merge [<options>] <branch>',
   tag: 'usage: git tag [<options>] <tag-name>',
   reset: 'usage: git reset [--soft | --mixed | --hard] [<commit>]',
+  remote: 'usage: git remote [-v | --verbose]',
+  fetch: 'usage: git fetch [<remote>]',
+  pull: 'usage: git pull [<remote>]',
+  push: 'usage: git push [-u | --set-upstream] [--force | --force-with-lease] [<remote>] [<branch>]',
 };
 
 /** Shell-ish tokenizer: whitespace splits, single and double quotes group.
@@ -148,9 +163,14 @@ export function parseCommand(input: string): ParseResult {
       let short = false;
       let showBranch = false;
       for (const t of rest) {
+        // Combined one-letter flags are real git usage: -sb === -s -b.
+        const combined = /^-([sb]+)$/.exec(t);
         if (t === '-s' || t === '--short') short = true;
         else if (t === '-b' || t === '--branch') showBranch = true;
-        else if (t === '--') continue;
+        else if (combined) {
+          if (combined[1].includes('s')) short = true;
+          if (combined[1].includes('b')) showBranch = true;
+        } else if (t === '--') continue;
         else if (t.startsWith('-')) return unknownOption('status', t);
       }
       return { ok: true, command: { cmd: 'status', short, showBranch } };
@@ -299,6 +319,66 @@ export function parseCommand(input: string): ParseResult {
         }
       }
       return { ok: true, command: { cmd: 'reset', mode, target } };
+    }
+
+    case 'remote': {
+      let verbose = false;
+      for (const t of rest) {
+        if (t === '-v' || t === '--verbose') verbose = true;
+        else return unknownOption('remote', t);
+      }
+      return { ok: true, command: { cmd: 'remote', verbose } };
+    }
+
+    case 'fetch': {
+      let remote: string | null = null;
+      for (const t of rest) {
+        if (t === '--') continue;
+        else if (t.startsWith('-')) return unknownOption('fetch', t);
+        else if (remote === null) remote = t;
+        else return err('fatal: Gitsy fetch always fetches every branch\n' + USAGE.fetch);
+      }
+      return { ok: true, command: { cmd: 'fetch', remote: remote ?? 'origin' } };
+    }
+
+    case 'pull': {
+      let remote: string | null = null;
+      for (const t of rest) {
+        if (t === '--') continue;
+        else if (t.startsWith('-')) return unknownOption('pull', t);
+        else if (remote === null) remote = t;
+        else return err('fatal: Gitsy pull always pulls the current branch\n' + USAGE.pull);
+      }
+      return { ok: true, command: { cmd: 'pull', remote: remote ?? 'origin' } };
+    }
+
+    case 'push': {
+      let remote: string | null = null;
+      let branch: string | null = null;
+      let force = false;
+      let forceWithLease = false;
+      let setUpstream = false;
+      for (const t of rest) {
+        if (t === '-f' || t === '--force') force = true;
+        else if (t === '--force-with-lease') forceWithLease = true;
+        else if (t === '-u' || t === '--set-upstream') setUpstream = true;
+        else if (t === '--') continue;
+        else if (t.startsWith('-')) return unknownOption('push', t);
+        else if (remote === null) remote = t;
+        else if (branch === null) branch = t;
+        else return err('fatal: Gitsy push takes at most <remote> <branch>\n' + USAGE.push);
+      }
+      return {
+        ok: true,
+        command: { cmd: 'push', remote: remote ?? 'origin', branch, force, forceWithLease, setUpstream },
+      };
+    }
+
+    case 'clone': {
+      // Parsed so the executor can answer in-fiction; `clone` never sits in
+      // a level's unlocked list, and ACT_OF no longer locks it: the fiction
+      // message is the teaching everywhere.
+      return { ok: true, command: { cmd: 'clone' } };
     }
 
     default:

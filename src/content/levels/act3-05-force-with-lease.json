@@ -1,0 +1,34 @@
+{
+  "id": "act3-05-force-with-lease",
+  "act": 3,
+  "title": "Take out the junk",
+  "brief": "A stray debug file landed on origin. Your local main is still clean, one commit behind.\n\nRewriting a remote is sometimes the right call, but `--force` is blunt: it overwrites whatever origin has, even work you have never seen. `--force-with-lease` fires only when origin is exactly where your cache says it is. Fetch first so the lease is fresh, then rewrite origin back to the good commit.",
+  "setup": [
+    { "op": "commit", "message": "initial commit", "files": { "app.txt": "app v1\n" } },
+    { "op": "remotePush", "branch": "main" },
+    { "op": "remoteCommit", "message": "debug junk", "files": { "debug.txt": "junk\n" } }
+  ],
+  "unlocked": ["status", "log", "fetch", "push", "remote"],
+  "goals": [
+    {
+      "assert": "remoteSynced",
+      "args": ["main"],
+      "label": "origin/main matches your clean main"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["origin/main", 1],
+      "label": "The junk commit is gone from origin's history"
+    }
+  ],
+  "hints": [
+    "git fetch first: the lease compares origin against your local cache of it. A stale cache means refusal.",
+    "git push --force-with-lease rewrites origin/main to your main, and refuses if anyone raced you."
+  ],
+  "par": 2,
+  "solution": ["git fetch", "git push --force-with-lease"],
+  "wrongSolutions": [
+    ["git push --force-with-lease"],
+    ["git push"]
+  ]
+}

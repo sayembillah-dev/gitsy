@@ -212,3 +212,33 @@ Format: date, what, why.
 - Gate: 149 tests / 17 files, tsc + next build clean, new play routes 200.
   The "three novices finish unaided" leg of the gate is a human playtest;
   it stays open until real users run Act 1.
+
+## Phase 8 — Site layer (8238eda)
+
+- Landing, /learn index, per-level SSG explainers (generateStaticParams),
+  /docs, sitemap, robots, icon. All server components; the landing ships
+  zero app client JS by construction, not by hope.
+- OG images via next/og (the vendored successor of @vercel/og; the plan's
+  package name is stale). The graph art is one pure SVG-string builder
+  (src/site/graphArt.ts) shared by the landing (inline) and the OG routes
+  (data-URI <img>: satori renders <img>, not inline <svg>, and an <img> SVG
+  cannot see CSS vars, so the section-4 palette is inlined there. Keep
+  graphArt ART_PALETTE in sync with globals.css).
+- metadataBase is the placeholder https://gitsy.dev until a deploy domain
+  exists.
+- Bundle gate (test/site-bundle.spec.ts) has two layers: a source
+  import-graph walk from the site entries that must never reach
+  src/engine, src/game, or the heavy packages (with a positive control on
+  app/play/** so the walker cannot pass vacuously), and a built-artifact
+  scan of the Turbopack per-route client-reference manifest + chunk bytes.
+  Turbopack (Next 16) writes NO app-build-manifest.json; the scan reads
+  .next/server/app/(site)/page_client-reference-manifest.js instead.
+  @next/bundle-analyzer was skipped: it targets webpack builds and Next 16
+  builds with Turbopack by default.
+- Lighthouse gate ran for real (headless Chrome, lighthouse@12):
+  performance 97, accessibility 100, best-practices 100, seo 100. The one
+  a11y failure was st-ghost text failing contrast ("locked" labels); state
+  hues stay off prose, ghost text is for the graph only.
+- Gate: 152 tests / 18 files, tsc + next build clean (29 static pages,
+  incl. 10 level pages + 10 level OG images), all routes probed 200,
+  OG images verified as real PNGs.

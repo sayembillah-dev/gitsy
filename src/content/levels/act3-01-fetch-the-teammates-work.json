@@ -1,0 +1,34 @@
+{
+  "id": "act3-01-fetch-the-teammates-work",
+  "act": 3,
+  "title": "The teammate upstream",
+  "brief": "This repository is a clone: `git remote -v` shows where it came from. While you were offline, your teammate pushed a commit to origin.\n\nNothing in your repository knows about it yet. Your `origin/main` is a local cache of what the remote looked like the last time you talked to it. Refresh the cache.",
+  "setup": [
+    { "op": "commit", "message": "initial commit", "files": { "app.txt": "app v1\n" } },
+    { "op": "remotePush", "branch": "main" },
+    { "op": "remoteCommit", "message": "teammate adds readme", "files": { "README.md": "# team\n" } }
+  ],
+  "unlocked": ["status", "log", "remote", "fetch"],
+  "goals": [
+    {
+      "assert": "commitReachable",
+      "args": ["origin/main", "teammate adds readme"],
+      "label": "origin/main knows about the teammate's commit"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["main", 1],
+      "label": "Your main has not moved"
+    }
+  ],
+  "hints": [
+    "git fetch talks to origin and refreshes your origin/* refs. It never moves your branches.",
+    "Type git fetch, then watch the graph: origin/main jumps while main stays put."
+  ],
+  "par": 1,
+  "solution": ["git fetch"],
+  "wrongSolutions": [
+    ["git status"],
+    ["git pull"]
+  ]
+}

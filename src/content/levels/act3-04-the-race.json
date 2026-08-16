@@ -1,0 +1,60 @@
+{
+  "id": "act3-04-the-race",
+  "act": 3,
+  "title": "The race",
+  "brief": "You and your teammate both started from the same commit. You wrote field notes; they shipped app v2. Your push WILL be rejected: origin has a commit your main does not.\n\nThat rejection is git protecting both of you. Read it, integrate their work with `git pull` (fetch plus merge), then push the joined history. Force-pushing here would delete your teammate's commit from origin. Do not be that teammate.",
+  "setup": [
+    { "op": "commit", "message": "initial commit", "files": { "app.txt": "app v1\n" } },
+    { "op": "remotePush", "branch": "main" },
+    { "op": "remoteCommit", "message": "teammate ships v2", "files": { "app.txt": "app v2\n" } }
+  ],
+  "unlocked": ["status", "log", "add", "commit", "push", "pull", "fetch"],
+  "goals": [
+    {
+      "assert": "remoteSynced",
+      "args": ["main"],
+      "label": "origin/main matches your main"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "add field notes"],
+      "label": "Your notes are committed"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "constraints": [
+    {
+      "assert": "commitReachable",
+      "args": ["origin/main", "teammate ships v2"],
+      "label": "The teammate's commit survives on origin"
+    }
+  ],
+  "hints": [
+    "Push once and READ the rejection. Git prints the next step in the hint lines.",
+    "git pull merges origin/main into your main. You touched notes.txt, they touched app.txt: the merge is clean.",
+    "The shape: edit notes.txt, add, commit, push (rejected), pull, push."
+  ],
+  "par": 6,
+  "solution": [
+    "edit-file: notes.txt field%20notes%0A",
+    "git add notes.txt",
+    "git commit -m \"add field notes\"",
+    "git push",
+    "git pull",
+    "git push"
+  ],
+  "wrongSolutions": [
+    [
+      "edit-file: notes.txt field%20notes%0A",
+      "git add notes.txt",
+      "git commit -m \"add field notes\"",
+      "git push",
+      "git push --force"
+    ],
+    ["git status"]
+  ]
+}

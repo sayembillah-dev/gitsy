@@ -122,6 +122,9 @@ export function layoutGraph(snap: RepoSnapshot): GraphLayout {
     ...Object.keys(snap.branches)
       .filter((n) => snap.branches[n] === h)
       .sort(),
+    ...Object.keys(snap.remoteBranches)
+      .filter((n) => snap.remoteBranches[n] === h)
+      .sort(),
     ...Object.keys(snap.tags)
       .filter((n) => snap.tags[n] === h)
       .sort()

@@ -194,6 +194,18 @@ export const predicateRegistry: Record<string, PredicateEntry> = {
     summary: 'A remote-tracking ref (origin/branch) exists locally.',
   },
 
+  remoteSynced: {
+    // Structural hashes are content-addressed, so a push that copied objects
+    // leaves both sides pointing at the SAME StructHash.
+    fn: (snap, branch) => {
+      if (!snap.remote || typeof branch !== 'string') return false;
+      const localTip = snap.branches[branch];
+      const remoteTip = snap.remote.branches[branch];
+      return localTip !== undefined && remoteTip !== undefined && localTip === remoteTip;
+    },
+    summary: 'Local branch tip and the remote branch tip are the same commit.',
+  },
+
   stillReachable: {
     // The revert-over-reset teacher: a commit "survives" if any ref, HEAD,
     // stash entry, or reflog entry can still walk to it.

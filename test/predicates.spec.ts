@@ -214,6 +214,27 @@ describe('predicate registry: tags, remotes, reachability', () => {
     expect(run('trackingSet', tracked, 'dev')).toBe(false);
   });
 
+  it('remoteSynced: local tip and remote tip are the same commit', () => {
+    const g = chainGraph();
+    const remoteSnap = { ...makeSnap(), commits: g.commits, branches: { main: g.c3.hash } };
+    const synced = makeSnap({
+      commits: g.commits,
+      branches: { main: g.c3.hash },
+      remote: remoteSnap,
+    });
+    expect(run('remoteSynced', synced, 'main')).toBe(true);
+
+    const remoteBehind = { ...remoteSnap, branches: { main: g.c2.hash } };
+    const unsynced = makeSnap({
+      commits: g.commits,
+      branches: { main: g.c3.hash },
+      remote: remoteBehind,
+    });
+    expect(run('remoteSynced', unsynced, 'main')).toBe(false);
+    expect(run('remoteSynced', makeSnap(), 'main')).toBe(false); // no remote at all
+    expect(run('remoteSynced', synced, 'gone')).toBe(false);
+  });
+
   it('stillReachable: any ref, stash, or reflog entry keeps a commit alive', () => {
     const g = chainGraph();
     const orphan = makeCommit('lost work', [g.c1.hash], { 'a.txt': 'lost\n' });

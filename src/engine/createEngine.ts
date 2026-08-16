@@ -22,6 +22,7 @@ import {
 import { parseCommand } from './parser';
 import { answerPatch, startPatch, type PatchSession } from './patch';
 import { readRawRepo } from './readState';
+import { copyGitObjects, ensureOrigin, originExists } from './remote';
 
 // Section 3 determinism rule: fixed author, monotonically incrementing
 // timestamps for setup commits. Without this, level SHAs differ per run and
@@ -64,13 +65,23 @@ export function createEngine(deps: EngineDeps): EditorEngine {
     gitFs,
     fs,
     dir: deps.dir,
+    originDir: `${deps.dir}-origin`,
     author: { ...PLAYER_AUTHOR },
     now: deps.now ?? (() => Math.floor(Date.now() / 1000)),
   };
   let setupCommits = 0;
   let patchSession: PatchSession | null = null;
 
-  const snapshot = async (): Promise<RepoSnapshot> => normalizeRepo(await readRawRepo(ctx));
+  // Phase 9: when the level has an origin, the snapshot carries a normalized
+  // view of it (snap.remote). Local remote-tracking refs ride along in
+  // snap.remoteBranches via readRawRepo either way.
+  const snapshot = async (): Promise<RepoSnapshot> => {
+    const local = normalizeRepo(await readRawRepo(ctx));
+    if (await originExists(ctx)) {
+      local.remote = normalizeRepo(await readRawRepo({ ...ctx, dir: ctx.originDir }));
+    }
+    return local;
+  };
 
   const applySetupOp = async (op: SetupOp): Promise<void> => {
     switch (op.op) {
@@ -101,15 +112,58 @@ export function createEngine(deps: EngineDeps): EditorEngine {
         return git.add({ fs: gitFs, dir: deps.dir, filepath: op.path });
       case 'tag':
         return git.tag({ fs: gitFs, dir: deps.dir, ref: op.name });
-      case 'remotePush':
-      case 'remoteCommit':
-        throw new Error(`setup op '${op.op}' arrives with the remote simulation (Phase 9)`);
+      case 'remotePush': {
+        // The "you cloned this" state: origin gets the local branch's objects
+        // and tip, and the local remote-tracking ref is born synced.
+        await ensureOrigin(ctx);
+        const sha = await git
+          .resolveRef({ fs: gitFs, dir: deps.dir, ref: `refs/heads/${op.branch}`, depth: 10 })
+          .catch(() => null);
+        if (!sha) throw new Error(`remotePush: local branch '${op.branch}' does not exist`);
+        await copyGitObjects(ctx, deps.dir, ctx.originDir);
+        await git.writeRef({
+          fs: gitFs,
+          dir: ctx.originDir,
+          ref: `refs/heads/${op.branch}`,
+          value: sha,
+          force: true,
+        });
+        await git.writeRef({
+          fs: gitFs,
+          dir: deps.dir,
+          ref: `refs/remotes/origin/${op.branch}`,
+          value: sha,
+          force: true,
+        });
+        return;
+      }
+      case 'remoteCommit': {
+        // The teammate: commits onto origin's current branch. Deterministic
+        // author/timestamp, same monotonic clock as local setup commits.
+        await ensureOrigin(ctx);
+        for (const [path, content] of Object.entries(op.files)) {
+          await writeTextFile(fs, joinPath(ctx.originDir, path), content);
+          await git.add({ fs: gitFs, dir: ctx.originDir, filepath: path });
+        }
+        const timestamp = T0 + setupCommits * 60;
+        const who = { ...LEVEL_AUTHOR, timestamp, timezoneOffset: 0 };
+        await git.commit({
+          fs: gitFs,
+          dir: ctx.originDir,
+          message: op.message,
+          author: who,
+          committer: who,
+        });
+        setupCommits += 1;
+        return;
+      }
     }
   };
 
   return {
     async buildLevel(setup: SetupOp[]): Promise<RepoSnapshot> {
       await rmrf(fs, deps.dir);
+      await rmrf(fs, ctx.originDir); // no origin unless this level makes one
       await mkdirp(fs, deps.dir);
       await git.init({ fs: gitFs, dir: deps.dir, defaultBranch: 'main' });
       setupCommits = 0;

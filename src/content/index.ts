@@ -14,10 +14,17 @@ import act107 from './levels/act1-07-stage-hunks-not-files.json';
 import act108 from './levels/act1-08-tell-the-story.json';
 import act201 from './levels/act2-01-merge-two-branches.json';
 import act202 from './levels/act2-02-resolve-a-conflict.json';
+import act301 from './levels/act3-01-fetch-the-teammates-work.json';
+import act302 from './levels/act3-02-pull-it-down.json';
+import act303 from './levels/act3-03-share-your-work.json';
+import act304 from './levels/act3-04-the-race.json';
+import act305 from './levels/act3-05-force-with-lease.json';
 
-const parsed = [act101, act102, act103, act104, act105, act106, act107, act108, act201, act202].map(
-  (json) => parseLevelFile(json),
-);
+const parsed = [
+  act101, act102, act103, act104, act105, act106, act107, act108,
+  act201, act202,
+  act301, act302, act303, act304, act305,
+].map((json) => parseLevelFile(json));
 
 export const levelList: LevelFile[] = parsed;
 

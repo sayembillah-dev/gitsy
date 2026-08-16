@@ -23,6 +23,9 @@ export interface EngineContext {
   /** Promise-based fs for the engine's own file reads and writes. */
   fs: FsLike;
   dir: string;
+  /** The simulated remote's repo directory (Phase 9). Created lazily:
+   *  a level has an origin only if its setup touches one. */
+  originDir: string;
   author: { name: string; email: string };
   now(): number;
 }

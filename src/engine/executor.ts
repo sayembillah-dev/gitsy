@@ -21,6 +21,13 @@ import {
   workdirFiles,
   type StatusRow,
 } from './readState';
+import {
+  NO_ORIGIN,
+  aheadBehind,
+  fetchFromOrigin,
+  originExists,
+  pushToOrigin,
+} from './remote';
 
 export interface ExecOutput {
   ok: boolean;
@@ -61,6 +68,19 @@ export async function execute(ctx: EngineContext, cmd: ParsedCommand): Promise<E
       return execTag(ctx, cmd);
     case 'reset':
       return execReset(ctx, cmd);
+    case 'remote':
+      return execRemote(ctx, cmd);
+    case 'fetch':
+      return execFetch(ctx, cmd);
+    case 'pull':
+      return execPull(ctx, cmd);
+    case 'push':
+      return execPush(ctx, cmd);
+    case 'clone':
+      return fail(
+        'fatal: Gitsy repositories arrive pre-cloned.\n' +
+          'hint: every Act 3 level already has an origin. Run git remote -v to see it.\n',
+      );
     case 'unsupported':
       return fail(`${cmd.name}: not available yet. It unlocks in a later act.\n`);
   }
@@ -216,6 +236,81 @@ async function branchSha(ctx: EngineContext, name: string): Promise<string | nul
   }
 }
 
+/** Resolves a remote-tracking ref name like "origin/main" to a SHA. */
+async function remoteSha(ctx: EngineContext, name: string): Promise<string | null> {
+  if (!name.includes('/')) return null;
+  try {
+    return await git.resolveRef({
+      fs: ctx.gitFs,
+      dir: ctx.dir,
+      ref: `refs/remotes/${name}`,
+      depth: 10,
+    });
+  } catch {
+    return null;
+  }
+}
+
+// ---- remote / fetch / pull / push (Phase 9) -------------------------------
+
+async function execRemote(ctx: EngineContext, cmd: Cmd<'remote'>): Promise<ExecOutput> {
+  if (!(await originExists(ctx))) return ok(''); // real git prints nothing
+  if (!cmd.verbose) return ok('origin\n');
+  return ok(`origin\t${ctx.originDir} (fetch)\norigin\t${ctx.originDir} (push)\n`);
+}
+
+async function execFetch(ctx: EngineContext, cmd: Cmd<'fetch'>): Promise<ExecOutput> {
+  if (cmd.remote !== 'origin') {
+    return fail(`fatal: '${cmd.remote}' does not appear to be a git repository\n`);
+  }
+  const r = await fetchFromOrigin(ctx);
+  return { ok: r.ok, stdout: r.stdout, stderr: r.stderr };
+}
+
+async function execPull(ctx: EngineContext, cmd: Cmd<'pull'>): Promise<ExecOutput> {
+  if (cmd.remote !== 'origin') {
+    return fail(`fatal: '${cmd.remote}' does not appear to be a git repository\n`);
+  }
+  // pull = fetch + merge origin/<current>. Real git's default strategy is
+  // merge; that is exactly the hand-rolled merge from Phase 4.
+  const fetched = await fetchFromOrigin(ctx);
+  if (!fetched.ok) return { ok: false, stdout: '', stderr: fetched.stderr };
+
+  const head = await headInfo(ctx);
+  if (head.type === 'detached') return fail('fatal: You are not currently on a branch.\n');
+  const tracking = await remoteSha(ctx, `origin/${head.name}`);
+  if (!tracking) {
+    return fail(
+      'There is no tracking information for the current branch.\n' +
+        'hint: push with -u first, or fetch a branch that exists on origin\n',
+    );
+  }
+  const merged = await execMerge(ctx, { cmd: 'merge', branch: `origin/${head.name}` });
+  return {
+    ok: merged.ok,
+    stdout: fetched.stdout + merged.stdout,
+    stderr: merged.stderr,
+  };
+}
+
+async function execPush(ctx: EngineContext, cmd: Cmd<'push'>): Promise<ExecOutput> {
+  const head = await headInfo(ctx);
+  const branch = cmd.branch ?? (head.type === 'branch' || head.type === 'unborn' ? head.name : null);
+  if (!branch) {
+    return fail(
+      'fatal: You are not currently on a branch.\n' +
+        'hint: to push the history leading to a detached HEAD, name it: git push origin <sha>\n',
+    );
+  }
+  const r = await pushToOrigin(ctx, {
+    branch,
+    force: cmd.force,
+    forceWithLease: cmd.forceWithLease,
+    setUpstream: cmd.setUpstream,
+  });
+  return { ok: r.ok, stdout: r.stdout, stderr: r.stderr };
+}
+
 async function execBranch(ctx: EngineContext, cmd: Cmd<'branch'>): Promise<ExecOutput> {
   const head = await headInfo(ctx);
   if (cmd.deleteName) {
@@ -280,7 +375,9 @@ async function treeOfRef(ctx: EngineContext, sha: string): Promise<Record<string
 
 async function execMerge(ctx: EngineContext, cmd: Cmd<'merge'>): Promise<ExecOutput> {
   const head = await headInfo(ctx);
-  const theirsSha = await branchSha(ctx, cmd.branch);
+  // Local branch, then remote-tracking ref: `git merge origin/main` is how
+  // pull integrates, and it works standalone too.
+  const theirsSha = (await branchSha(ctx, cmd.branch)) ?? (await remoteSha(ctx, cmd.branch));
   if (!theirsSha) return fail(`merge: ${cmd.branch} - not something we can merge\n`);
   const oursSha =
     head.type === 'branch'
@@ -385,7 +482,18 @@ async function execStatus(ctx: EngineContext, cmd: Cmd<'status'>): Promise<ExecO
   if (cmd.short) {
     const lines: string[] = [];
     if (cmd.showBranch) {
-      lines.push(`## ${head.type === 'detached' ? 'HEAD (no branch)' : head.name}`);
+      let branchLine = `## ${head.type === 'detached' ? 'HEAD (no branch)' : head.name}`;
+      if (head.type === 'branch' && (await originExists(ctx))) {
+        const ab = await aheadBehind(ctx, head.name);
+        if (ab) {
+          branchLine += `...origin/${head.name}`;
+          const bits: string[] = [];
+          if (ab.ahead > 0) bits.push(`ahead ${ab.ahead}`);
+          if (ab.behind > 0) bits.push(`behind ${ab.behind}`);
+          if (bits.length > 0) branchLine += ` [${bits.join(', ')}]`;
+        }
+      }
+      lines.push(branchLine);
     }
     for (const [path, h, w, s] of rows) {
       if (h === 0 && w === 2 && s === 0) {
@@ -412,6 +520,35 @@ async function execStatus(ctx: EngineContext, cmd: Cmd<'status'>): Promise<ExecO
     head.type === 'detached' ? `HEAD detached at ${short(head.sha)}` : `On branch ${head.name}`,
   ];
   if (head.type === 'unborn') lines.push('', 'No commits yet', '');
+
+  // Real git reports the remote-tracking relationship here; it is how the
+  // Act 3 cliff ("origin/main is a local cache") shows up in plain text.
+  if (head.type === 'branch' && (await originExists(ctx))) {
+    const ab = await aheadBehind(ctx, head.name);
+    if (ab) {
+      const track = `origin/${head.name}`;
+      if (ab.ahead === 0 && ab.behind === 0) {
+        lines.push(`Your branch is up to date with '${track}'.`);
+      } else if (ab.behind === 0) {
+        lines.push(
+          `Your branch is ahead of '${track}' by ${ab.ahead} commit${ab.ahead === 1 ? '' : 's'}.`,
+          '  (use "git push" to publish your local commits)',
+        );
+      } else if (ab.ahead === 0) {
+        lines.push(
+          `Your branch is behind '${track}' by ${ab.behind} commit${ab.behind === 1 ? '' : 's'}.`,
+          '  (use "git pull" to update your local branch)',
+        );
+      } else {
+        lines.push(
+          `Your branch and '${track}' have diverged,`,
+          `and have ${ab.ahead} and ${ab.behind} different commits each, respectively.`,
+          '  (use "git pull" if you want to integrate the remote branch with yours)',
+        );
+      }
+      lines.push('');
+    }
+  }
 
   if (stagedCount > 0) {
     lines.push('Changes to be committed:');
@@ -624,6 +761,8 @@ async function resolveRev(ctx: EngineContext, rev: string): Promise<string | nul
 
   const branch = await branchSha(ctx, rev);
   if (branch) return branch;
+  const tracking = await remoteSha(ctx, rev);
+  if (tracking) return tracking;
   try {
     return await git.resolveRef({
       fs: ctx.gitFs,

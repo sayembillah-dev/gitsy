@@ -202,12 +202,37 @@ export async function readRawRepo(ctx: EngineContext): Promise<RawRepo> {
   );
   const tags = await refMap(ctx, 'refs/tags', await git.listTags({ fs: ctx.gitFs, dir: ctx.dir }));
 
+  // Remote-tracking refs (refs/remotes/origin/*), keyed "origin/main".
+  // Present only after a fetch/push; origin's own tips live in snap.remote.
+  const remoteNames = await git
+    .listBranches({ fs: ctx.gitFs, dir: ctx.dir, remote: 'origin' })
+    .catch(() => [] as string[]);
+  const remoteBranches: Record<string, string> = {};
+  for (const name of remoteNames) {
+    try {
+      remoteBranches[`origin/${name}`] = await git.resolveRef({
+        fs: ctx.gitFs,
+        dir: ctx.dir,
+        ref: `refs/remotes/origin/${name}`,
+        depth: 10,
+      });
+    } catch {
+      // skip unresolvable tracking ref
+    }
+  }
+
   const headRaw = (await readTextFile(ctx.fs, joinPath(ctx.dir, '.git', 'HEAD'))).trim();
   const head = headRaw.startsWith('ref: ')
     ? { type: 'branch' as const, name: headRaw.slice(5).replace(/^refs\/heads\//, '') }
     : { type: 'detached' as const, sha: headRaw };
 
-  const tips = new Set<string>([...Object.values(branches), ...Object.values(tags)]);
+  // Tracking tips join the walk: fetched objects live in the LOCAL object
+  // store, and origin/main must appear in snap.commits to be drawable.
+  const tips = new Set<string>([
+    ...Object.values(branches),
+    ...Object.values(tags),
+    ...Object.values(remoteBranches),
+  ]);
   if (head.type === 'detached') tips.add(head.sha);
 
   const commits = new Map<string, RawCommit>();
@@ -239,7 +264,7 @@ export async function readRawRepo(ctx: EngineContext): Promise<RawRepo> {
     commits: [...commits.values()],
     branches,
     tags,
-    remoteBranches: {},
+    remoteBranches,
     head,
     workingTree,
     index,

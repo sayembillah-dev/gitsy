@@ -15,10 +15,11 @@ export const ACT_OF: Record<string, number> = {
   merge: 2,
   tag: 2,
   remote: 3,
-  clone: 3,
   fetch: 3,
   push: 3,
   pull: 3,
+  // clone is deliberately absent: the parser answers it with the in-fiction
+  // "Gitsy repositories arrive pre-cloned" message in every act.
   reset: 4,
   revert: 4,
   'cherry-pick': 4,

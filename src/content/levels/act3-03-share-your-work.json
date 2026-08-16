@@ -1,0 +1,46 @@
+{
+  "id": "act3-03-share-your-work",
+  "act": 3,
+  "title": "Share your work",
+  "brief": "Origin is where the team reads main. Your fix is invisible to them until you push it.\n\nFix the bug in `app.txt` (click the file in the working tree panel to open your editor), commit the fix, and push it so `origin/main` carries your work.",
+  "setup": [
+    { "op": "commit", "message": "initial commit", "files": { "app.txt": "app v1 (buggy)\n" } },
+    { "op": "remotePush", "branch": "main" }
+  ],
+  "unlocked": ["status", "log", "diff", "add", "commit", "push", "remote"],
+  "goals": [
+    {
+      "assert": "remoteSynced",
+      "args": ["main"],
+      "label": "origin/main matches your main"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["main", "fix the bug"],
+      "label": "Your fix is committed"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "Edit app.txt from the working tree panel, then git add app.txt and git commit -m \"fix the bug\".",
+    "git push copies your new commit to origin and slides origin/main forward to match."
+  ],
+  "par": 3,
+  "solution": [
+    "edit-file: app.txt app%20v2%20(fixed)%0A",
+    "git add app.txt",
+    "git commit -m \"fix the bug\"",
+    "git push"
+  ],
+  "wrongSolutions": [
+    [
+      "edit-file: app.txt app%20v2%20(fixed)%0A",
+      "git add app.txt",
+      "git commit -m \"fix the bug\""
+    ]
+  ]
+}

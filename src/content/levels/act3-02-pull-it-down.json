@@ -1,0 +1,39 @@
+{
+  "id": "act3-02-pull-it-down",
+  "act": 3,
+  "title": "Pull it down",
+  "brief": "Fetching refreshed your cache, but your branch is still behind. `git status` says so in plain words.\n\nFetching shows you the work; pulling brings it into your branch. `git pull` is `git fetch` plus `git merge origin/main`. When you have no commits of your own, that merge is a fast-forward: the main pointer simply slides forward.",
+  "setup": [
+    { "op": "commit", "message": "initial commit", "files": { "app.txt": "app v1\n" } },
+    { "op": "remotePush", "branch": "main" },
+    { "op": "remoteCommit", "message": "teammate adds readme", "files": { "README.md": "# team\n" } }
+  ],
+  "unlocked": ["status", "log", "remote", "fetch", "pull"],
+  "goals": [
+    {
+      "assert": "commitCount",
+      "args": ["main", 2],
+      "label": "main holds both commits"
+    },
+    {
+      "assert": "isAncestor",
+      "args": ["origin/main", "main"],
+      "label": "main has caught up to origin/main"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "hints": [
+    "git status tells you how far behind origin/main you are.",
+    "git pull fetches, then fast-forwards your main onto origin/main."
+  ],
+  "par": 2,
+  "solution": ["git fetch", "git pull"],
+  "wrongSolutions": [
+    ["git fetch"],
+    ["git status"]
+  ]
+}

@@ -69,7 +69,14 @@ export default function GraphSvg({ snapshot }: { snapshot: RepoSnapshot }) {
             {n.refs.map((ref) => (
               <span
                 key={ref}
-                className="rounded border border-rule bg-panel px-1.5 py-0.5 text-[10px] text-ink"
+                className={
+                  ref.startsWith('origin/')
+                    ? // Tracking refs wear the HEAD hue (section 4: "HEAD
+                      // marker, tracking refs"): they are pointers you own
+                      // locally but do not control.
+                      'rounded border border-st-head bg-panel px-1.5 py-0.5 text-[10px] text-st-head'
+                    : 'rounded border border-rule bg-panel px-1.5 py-0.5 text-[10px] text-ink'
+                }
               >
                 {ref}
               </span>
