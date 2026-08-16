@@ -1,0 +1,42 @@
+{
+  "id": "act1-05-unstage-a-file",
+  "act": 1,
+  "title": "Unstage a file",
+  "brief": "A half-finished idea in draft.txt got staged by accident. Take it OUT of the index, but keep the edit in your working tree. Do not discard it and do not commit it.",
+  "setup": [
+    { "op": "commit", "message": "draft v1", "files": { "draft.txt": "version one\n" } },
+    { "op": "write", "path": "draft.txt", "content": "version two, unfinished\n" },
+    { "op": "stage", "path": "draft.txt" }
+  ],
+  "unlocked": ["status", "diff", "restore", "add", "commit", "log"],
+  "goals": [
+    {
+      "assert": "fileModified",
+      "args": ["draft.txt"],
+      "label": "The edit survives in the working tree (unstaged)"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["HEAD", 1],
+      "label": "Still exactly one commit"
+    }
+  ],
+  "diagnostics": [
+    {
+      "when": "fileStaged",
+      "args": ["draft.txt"],
+      "say": "draft.txt is still staged. git restore --staged draft.txt moves it out of the index and keeps your edit on disk."
+    }
+  ],
+  "hints": [
+    "git restore draft.txt would DELETE your edit. That is the wrong direction.",
+    "git restore --staged draft.txt only touches the index: the file leaves the next commit but stays on disk."
+  ],
+  "par": 1,
+  "solution": ["git restore --staged draft.txt"],
+  "wrongSolutions": [
+    ["git restore draft.txt"],
+    ["git status"],
+    ["git commit -m \"half baked\""]
+  ]
+}

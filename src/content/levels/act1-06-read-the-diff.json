@@ -1,0 +1,26 @@
+{
+  "id": "act1-06-read-the-diff",
+  "act": 1,
+  "title": "Read the diff",
+  "brief": "app.txt changed while you were away. Before you commit anything, look at exactly what changed with git diff. If it is the polish you expected, stage and commit it as \"polish app\".",
+  "setup": [
+    { "op": "commit", "message": "app v1", "files": { "app.txt": "plain app\n" } },
+    { "op": "write", "path": "app.txt", "content": "plain app, polished\n" }
+  ],
+  "unlocked": ["status", "diff", "add", "commit", "log"],
+  "goals": [
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "polish app"],
+      "label": "A commit with the message \"polish app\" exists"
+    },
+    { "assert": "workingTreeClean", "args": [], "label": "Working tree is clean" }
+  ],
+  "hints": [
+    "git diff shows removed lines in red and added lines in green.",
+    "Happy with it? git add app.txt, then git commit -m \"polish app\"."
+  ],
+  "par": 3,
+  "solution": ["git diff", "git add app.txt", "git commit -m \"polish app\""],
+  "wrongSolutions": [["git diff"], ["git commit -m \"polish app\""]]
+}

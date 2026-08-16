@@ -1,0 +1,64 @@
+{
+  "id": "act1-07-stage-hunks-not-files",
+  "act": 1,
+  "title": "Stage hunks, not files",
+  "brief": "app.txt holds TWO separate fixes: one near the top, one near the bottom. Land them as two commits. git add -p walks you through the changes hunk by hunk: answer y to stage, n to skip.",
+  "setup": [
+    {
+      "op": "commit",
+      "message": "app skeleton",
+      "files": {
+        "app.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\nline 11\nline 12\n"
+      }
+    },
+    {
+      "op": "write",
+      "path": "app.txt",
+      "content": "line 01\nline 02 fixed\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\nline 11 fixed\nline 12\n"
+    }
+  ],
+  "unlocked": ["status", "diff", "add", "commit", "log"],
+  "goals": [
+    {
+      "assert": "commitCount",
+      "args": ["HEAD", 3],
+      "label": "Three commits in total (skeleton plus your two)"
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "fix line two"],
+      "label": "One commit is \"fix line two\""
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "fix line eleven"],
+      "label": "One commit is \"fix line eleven\""
+    },
+    { "assert": "workingTreeClean", "args": [], "label": "Working tree is clean" }
+  ],
+  "diagnostics": [
+    {
+      "when": "fileStaged",
+      "args": ["app.txt"],
+      "say": "Something is staged. If it is the first hunk only, commit it as \"fix line two\"; then stage the rest for \"fix line eleven\"."
+    }
+  ],
+  "hints": [
+    "Run git add -p. Git offers the first hunk: answer y.",
+    "It then offers the second hunk: answer n. Commit what you staged as \"fix line two\".",
+    "Finish with git add app.txt and git commit -m \"fix line eleven\"."
+  ],
+  "par": 5,
+  "solution": [
+    "git add -p",
+    "patch-answer: y",
+    "patch-answer: n",
+    "git commit -m \"fix line two\"",
+    "git add app.txt",
+    "git commit -m \"fix line eleven\""
+  ],
+  "wrongSolutions": [
+    ["git add app.txt", "git commit -m \"both fixes at once\""],
+    ["git add -p", "patch-answer: y", "patch-answer: y", "git commit -m \"fix line two\""]
+  ]
+}

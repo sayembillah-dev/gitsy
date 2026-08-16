@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluate } from '@/core/evaluate';
 import { levelDefOf, parseLevelFile, type LevelFile } from '@/core/levelSchema';
 import { createEngine } from '@/engine/createEngine';
+import { commandCountOf, replayEntries } from '@/game/replay';
 
 const LEVELS_DIR = join(process.cwd(), 'src', 'content', 'levels');
 
@@ -24,23 +25,14 @@ function loadLevels(): { name: string; level: LevelFile }[] {
   }));
 }
 
-// Solutions may contain `edit-file: <path> <uri-encoded content>` directives
-// (Phase 5): the canonical way a solution edits bytes, mirroring what the UI
-// editor logs. Everything else is a terminal command.
+// Solutions may contain `patch-answer:` and `edit-file:` directives (Phases
+// 3 and 5): the same replay the Phase 6 undo/refresh path uses, so the gate
+// and the game share one truth.
 async function replay(setup: LevelFile['setup'], commands: string[]) {
   const dir = await mkdtemp(join(tmpdir(), 'gitsy-level-'));
   const engine = createEngine({ fs: nodeFs, dir });
-  await engine.buildLevel(setup);
-  for (const command of commands) {
-    if (command.startsWith('edit-file: ')) {
-      const rest = command.slice('edit-file: '.length);
-      const space = rest.indexOf(' ');
-      await engine.editFile(rest.slice(0, space), decodeURIComponent(rest.slice(space + 1)));
-    } else {
-      await engine.run(command);
-    }
-  }
-  return { snapshot: await engine.snapshot(), commandCount: commands.length };
+  const snapshot = await replayEntries(engine, setup, commands);
+  return { snapshot, commandCount: commandCountOf(commands) };
 }
 
 const levels = loadLevels();

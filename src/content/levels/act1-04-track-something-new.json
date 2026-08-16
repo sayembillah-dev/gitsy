@@ -1,0 +1,34 @@
+{
+  "id": "act1-04-track-something-new",
+  "act": 1,
+  "title": "Track something new",
+  "brief": "Your project already has one commit, and a brand new notes.txt just appeared. Git ignores untracked files until you add them. Track it and commit.",
+  "setup": [
+    { "op": "commit", "message": "first draft", "files": { "app.txt": "app v1\n" } },
+    { "op": "write", "path": "notes.txt", "content": "remember everything\n" }
+  ],
+  "unlocked": ["status", "add", "commit", "log"],
+  "goals": [
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "add notes"],
+      "label": "A commit with the message \"add notes\" exists"
+    },
+    { "assert": "commitCount", "args": ["HEAD", 2], "label": "Two commits in total" },
+    { "assert": "workingTreeClean", "args": [], "label": "Working tree is clean" }
+  ],
+  "diagnostics": [
+    {
+      "when": "commitCount",
+      "args": ["HEAD", 1],
+      "say": "notes.txt is still untracked. git status shows it; git add notes.txt moves it into the index, then commit."
+    }
+  ],
+  "hints": [
+    "git status lists notes.txt under untracked files.",
+    "git add notes.txt, then git commit -m \"add notes\"."
+  ],
+  "par": 3,
+  "solution": ["git status", "git add notes.txt", "git commit -m \"add notes\""],
+  "wrongSolutions": [["git status"], ["git add notes.txt"]]
+}

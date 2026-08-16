@@ -196,3 +196,19 @@ Format: date, what, why.
 - Gate: 133 tests / 17 files, tsc + next build clean. Full-loop-survives-
   refresh is codified in test/replay.spec.ts (structural equality of
   commits/panels; git SHAs are wall-clock display fields, never compared).
+
+## 2026-08-17: Phase 7 Act 1 content (eight levels)
+
+- Act 1 is now eight levels: 01 first commit, 02 restore worktree, 03
+  selective staging, 04 track a new file, 05 unstage with restore --staged,
+  06 read the diff, 07 stage hunks with add -p, 08 build a story (editor +
+  log --oneline). The arc covers the whole Act 1 grammar.
+- Gotcha: levels.spec replay routed only `edit-file:` directives, never
+  `patch-answer:`, so act1-07's canonical solution failed until the gate
+  switched to the shared replayEntries/commandCountOf from src/game/replay.ts.
+  One replay implementation now serves undo, refresh, and the gate.
+- act1-08 is the first level whose canonical solution uses the file editor;
+  act1-07 is the first using an interactive patch session.
+- Gate: 149 tests / 17 files, tsc + next build clean, new play routes 200.
+  The "three novices finish unaided" leg of the gate is a human playtest;
+  it stays open until real users run Act 1.

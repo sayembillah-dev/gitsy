@@ -1,0 +1,51 @@
+{
+  "id": "act1-08-tell-the-story",
+  "act": 1,
+  "title": "Tell the story",
+  "brief": "A story grows line by line, and so does a good history. Open story.txt from the working tree panel, add chapter two, commit it. Then add chapter three and commit again. Finish by reading your history with git log --oneline.",
+  "setup": [
+    {
+      "op": "commit",
+      "message": "chapter one",
+      "files": { "story.txt": "once upon a time\n" }
+    }
+  ],
+  "unlocked": ["status", "diff", "add", "commit", "log"],
+  "goals": [
+    { "assert": "commitCount", "args": ["HEAD", 3], "label": "Three commits in total" },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "chapter two"],
+      "label": "One commit is \"chapter two\""
+    },
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "chapter three"],
+      "label": "One commit is \"chapter three\""
+    },
+    { "assert": "workingTreeClean", "args": [], "label": "Working tree is clean" }
+  ],
+  "hints": [
+    "Click story.txt in the working tree panel, add a line, save.",
+    "git add story.txt, git commit -m \"chapter two\". Then repeat for chapter three.",
+    "git log --oneline reads your story back as a history."
+  ],
+  "par": 7,
+  "solution": [
+    "edit-file: story.txt once%20upon%20a%20time%0Achapter%20two%0A",
+    "git add story.txt",
+    "git commit -m \"chapter two\"",
+    "edit-file: story.txt once%20upon%20a%20time%0Achapter%20two%0Achapter%20three%0A",
+    "git add story.txt",
+    "git commit -m \"chapter three\"",
+    "git log --oneline"
+  ],
+  "wrongSolutions": [
+    ["git log --oneline"],
+    [
+      "edit-file: story.txt once%20upon%20a%20time%0Achapter%20two%0Achapter%20three%0A",
+      "git add story.txt",
+      "git commit -m \"chapters two and three\""
+    ]
+  ]
+}
