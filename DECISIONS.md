@@ -279,3 +279,78 @@ Format: date, what, why.
   kills the constraint), force-with-lease (lease refuses stale, works fresh).
 - Gate: 181 tests / 19 files (levels.spec now replays 15 levels), tsc +
   next build clean (34 static pages), act-3 play/learn routes probed 200.
+
+## 2026-08-17: Phase 10 Acts 4-5 + telemetry (ff18c4c)
+
+- types.ts hand edit 1 of 2 (the one the plan sanctions in phase 4):
+  CommandResult.rewrites?: Record<StructHash, StructHash>. amend and rebase
+  report old-to-new hashes; GraphSvg gives the NEW node the OLD hash as its
+  React key so the spring morphs it, and the abandoned original stays as a
+  ghost: faded, struck-through label.
+- types.ts hand edit 2 of 2 (beyond the plan's single sanction; flagged for
+  review): RepoSnapshot.worktrees?: { path, branch }[]. Act 5's worktree level
+  needs predicate-observable worktree state or its goals are dishonest
+  (git branch hotfix would pass). Chosen over shipping the command without
+  a level. Optional field, backward compatible.
+- Engine layout: refs.ts extracted (headInfo, branchSha/remoteSha,
+  treeOfRef, resolveRev generalized to any rev~n/rev^n plus SHA-prefix scan
+  across refs AND reflog AND stash, dirtyOverlap, formatGitDate).
+  history.ts owns amend/revert/cherry-pick/rebase on one shared
+  threeWayApply (same semantics as Phase 4 merge, which now uses it too).
+  stash.ts: the stash is a real dangling commit; the journal stack is
+  authoritative. inspect.ts: reflog print, blame (exact-line LCS over the
+  first-parent chain), log -S pickaxe, bisect, worktree.
+- journal.ts: engine state lives in .git JSON files (gitsy-reflog,
+  gitsy-stash, gitsy-worktrees, gitsy-bisect, gitsy-rebase). They ride the
+  repo dir, die with buildLevel's rmrf, and replay deterministically because
+  persistence is the command log, never repo bytes.
+- The reflog is synthesized from the journal, not from isomorphic-git (it
+  keeps none). Every user-visible ref movement logs: commit, amend, merge,
+  revert, cherry-pick, rebase steps, reset, checkout, stash. Setup commits
+  log too, or Act 5 rescue lessons would have nothing to find.
+- rebase -i: the todo list is a REAL workdir file (REBASE_TODO) so the
+  Phase 5 editor surface edits it unchanged. Strict todo parsing (verbs
+  pick/squash/drop/reword-with-inline-message, SHA must name a candidate,
+  once). git add refuses to stage the worksheet; add . skips it. squash is
+  implemented as a fold-amend with combined messages; reword takes its new
+  message inline (no second editor). --continue runs the plan; --abort
+  restores the original tip; conflicts stop with real marker files.
+- Sequencer states generalize: REVERT_HEAD and CHERRY_PICK_HEAD complete via
+  a plain git commit (message defaults from REVERT_MSG/CHERRY_PICK_MSG), and
+  conflicted file status now triggers on ANY sequencer state, not only
+  MERGE_HEAD. revert messages are single-line (no This-reverts body) so
+  commitReachable's exact-message equality can teach them.
+- switch/checkout now refuse when uncommitted changes overlap the tree delta
+  (real git's text), which is what makes stash a necessity instead of a
+  trick. checkout <rev> detaches implicitly; switch needs --detach. A
+  worktree's branch refuses checkout elsewhere (exclusivity rule).
+- Level-design rule learned: goals must NOT hold at the initial snapshot.
+  First drafts of act4-07 and act5-01 auto-completed on git status. Fixes:
+  act4-07 ends with the rescued work committed; act5-01 gained
+  reflogContains("reset: moving to HEAD~2") as proof-of-the-moves. New
+  predicates this phase: fileInCommit, worktreeExists, reflogContains.
+- Level solutions embed deterministic short SHAs (rebase worksheets,
+  recovery targets). Safe under the section-3 determinism rule (fixed
+  author + T0 clock); levels.spec is the drift alarm. One transcription
+  bug (beebeeb vs bebeebf) was caught by it immediately.
+- Bisect fiction: on conclusion Gitsy checks out the first bad commit (real
+  git leaves you at the last tested one). Documented in the output text;
+  it makes the answer observable to goals.
+- Worktree sim: linked worktree is a sibling dir with its own .git and
+  copied objects; commits cannot be made inside it (no cd), so the level
+  teaches add/list/remove plus branch exclusivity. filter-repo stays
+  out of scope (external tooling even in real git).
+- Telemetry: sendBeacon/fire-and-forget from GameShell on first completion
+  per attempt (level id, command log, outcome, duration). POST
+  /api/telemetry validates with zod and LPUSHes to Upstash when
+  UPSTASH_REDIS_REST_URL/TOKEN are set; a silent 204 no-op otherwise.
+- Flag-level locks live in terminalCore (ACT_OF is name-keyed):
+  commit --amend locks until Act 4, log -S until Act 5.
+- Content: 8 Act 4 levels (amend, reset degrees, revert-over-reset,
+  cherry-pick, rebase observation, rebase -i worksheet, stash via a real
+  switch refusal, cleanup boss with maxCommands 4) and 5 Act 5 levels
+  (reflog rescue, bisect, blame, pickaxe, worktree). 28 levels total.
+- Gate: 270 tests / 22 files green (levels.spec replays every canonical
+  and wrong solution), tsc clean, next build clean: 65 static pages,
+  28 SSG explainers + 28 OG images, /api/telemetry dynamic.
+
