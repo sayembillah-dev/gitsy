@@ -13,10 +13,12 @@ import {
 } from './fsx';
 import type { ParsedCommand } from './parser';
 import {
+  flattenTree,
   headTreeOids,
   indexOids,
   readBlobText,
   statusRows,
+  workdirFiles,
   type StatusRow,
 } from './readState';
 
@@ -48,6 +50,15 @@ export async function execute(ctx: EngineContext, cmd: ParsedCommand): Promise<E
       return execDiff(ctx, cmd);
     case 'restore':
       return execRestore(ctx, cmd);
+    case 'branch':
+      return execBranch(ctx, cmd);
+    case 'switch':
+    case 'checkout':
+      return execSwitchLike(ctx, cmd);
+    case 'merge':
+      return execMerge(ctx, cmd);
+    case 'tag':
+      return execTag(ctx, cmd);
     case 'unsupported':
       return fail(`${cmd.name}: not available yet. It unlocks in a later act.\n`);
   }
@@ -133,7 +144,30 @@ async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecO
   const head = await headInfo(ctx);
   const label = head.type === 'detached' ? 'HEAD' : head.name;
 
-  if (staged.length === 0 && !cmd.allowEmpty) {
+  // Merge finale: committing with MERGE_HEAD present creates the two-parent
+  // merge commit, but only after every conflict marker is edited away. This
+  // check comes before the nothing-staged refusal: real git answers
+  // "unmerged files" even when the index is untouched.
+  const mergeHeadPath = joinPath(ctx.dir, '.git', 'MERGE_HEAD');
+  const merging = await pathExists(ctx.fs, mergeHeadPath);
+  let parents: string[] | undefined;
+  if (merging) {
+    const workdir = await workdirFiles(ctx);
+    const unmerged = [...workdir.keys()].filter((p) =>
+      (workdir.get(p)?.content ?? '').includes('<<<<<<< '),
+    );
+    if (unmerged.length > 0) {
+      return fail(
+        `error: Committing is not possible because you have unmerged files.\n` +
+          `fatal: Exiting because of an unresolved conflict.\n`,
+      );
+    }
+    const theirSha = (await readTextFile(ctx.fs, mergeHeadPath)).trim();
+    const headSha = await git.resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 });
+    parents = [headSha, theirSha];
+  }
+
+  if (staged.length === 0 && !cmd.allowEmpty && !merging) {
     const dirty = rows.some(([, h, w, s]) => !(h === 1 && w === 1 && s === 1));
     return {
       ok: false,
@@ -154,12 +188,189 @@ async function execCommit(ctx: EngineContext, cmd: Cmd<'commit'>): Promise<ExecO
     message,
     author: who,
     committer: who,
+    ...(parents ? { parent: parents } : {}),
   });
+  if (merging) await ctx.fs.unlink(mergeHeadPath);
   const root = head.type === 'unborn' ? ' (root-commit)' : '';
   const n = staged.length;
   return ok(
     `[${label}${root} ${short(sha)}] ${message.split('\n')[0]}\n` +
       ` ${n} file${n === 1 ? '' : 's'} changed\n`,
+  );
+}
+
+// ---- branch / switch / checkout / tag ------------------------------------
+
+async function branchSha(ctx: EngineContext, name: string): Promise<string | null> {
+  try {
+    return await git.resolveRef({
+      fs: ctx.gitFs,
+      dir: ctx.dir,
+      ref: `refs/heads/${name}`,
+      depth: 10,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function execBranch(ctx: EngineContext, cmd: Cmd<'branch'>): Promise<ExecOutput> {
+  const head = await headInfo(ctx);
+  if (cmd.deleteName) {
+    const name = cmd.deleteName;
+    if (head.type === 'branch' && head.name === name) {
+      return fail(`error: cannot delete branch '${name}' while you are on it\n`);
+    }
+    const sha = await branchSha(ctx, name);
+    if (!sha) return fail(`error: branch '${name}' not found\n`);
+    await git.deleteBranch({ fs: ctx.gitFs, dir: ctx.dir, ref: name });
+    return ok(`Deleted branch ${name} (was ${short(sha)}).\n`);
+  }
+  if (cmd.name) {
+    if (await branchSha(ctx, cmd.name)) {
+      return fail(`fatal: a branch named '${cmd.name}' already exists\n`);
+    }
+    await git.branch({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
+    return ok('');
+  }
+  const names = (await git.listBranches({ fs: ctx.gitFs, dir: ctx.dir })).sort();
+  const lines = names.map((n) =>
+    n === (head.type === 'branch' ? head.name : null) ? `* ${n}` : `  ${n}`,
+  );
+  return ok(lines.join('\n') + (lines.length ? '\n' : ''));
+}
+
+async function execSwitchLike(
+  ctx: EngineContext,
+  cmd: Cmd<'switch'> | Cmd<'checkout'>,
+): Promise<ExecOutput> {
+  const verb = cmd.cmd;
+  if (cmd.create) {
+    if (await branchSha(ctx, cmd.name)) {
+      return fail(`fatal: a branch named '${cmd.name}' already exists\n`);
+    }
+    await git.branch({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
+    await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
+    return ok(`Switched to a new branch '${cmd.name}'\n`);
+  }
+  if (!(await branchSha(ctx, cmd.name))) {
+    return fail(
+      verb === 'switch'
+        ? `fatal: invalid reference: ${cmd.name}\n`
+        : `error: pathspec '${cmd.name}' did not match any file(s) known to git\n`,
+    );
+  }
+  await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
+  return ok(`Switched to branch '${cmd.name}'\n`);
+}
+
+async function execTag(ctx: EngineContext, cmd: Cmd<'tag'>): Promise<ExecOutput> {
+  await git.tag({ fs: ctx.gitFs, dir: ctx.dir, ref: cmd.name });
+  return ok('');
+}
+
+// ---- merge ----------------------------------------------------------------
+
+async function treeOfRef(ctx: EngineContext, sha: string): Promise<Record<string, string>> {
+  const { commit } = await git.readCommit({ fs: ctx.gitFs, dir: ctx.dir, oid: sha });
+  return flattenTree(ctx, commit.tree);
+}
+
+async function execMerge(ctx: EngineContext, cmd: Cmd<'merge'>): Promise<ExecOutput> {
+  const head = await headInfo(ctx);
+  const theirsSha = await branchSha(ctx, cmd.branch);
+  if (!theirsSha) return fail(`merge: ${cmd.branch} - not something we can merge\n`);
+  const oursSha =
+    head.type === 'branch'
+      ? await branchSha(ctx, head.name)
+      : head.type === 'detached'
+        ? head.sha
+        : null;
+  if (!oursSha) return fail('fatal: cannot merge into an unborn branch\n');
+
+  const [oursLog, theirsLog] = await Promise.all([
+    git.log({ fs: ctx.gitFs, dir: ctx.dir, ref: oursSha }),
+    git.log({ fs: ctx.gitFs, dir: ctx.dir, ref: theirsSha }),
+  ]);
+  const oursSet = new Set(oursLog.map((e) => e.oid));
+  const base = theirsLog.find((e) => oursSet.has(e.oid))?.oid ?? null;
+
+  if (base === theirsSha) return ok('Already up to date.\n');
+
+  if (base === oursSha) {
+    // Fast-forward: move our ref, then force the workdir and index to match.
+    if (head.type === 'branch') {
+      await git.writeRef({
+        fs: ctx.gitFs,
+        dir: ctx.dir,
+        ref: `refs/heads/${head.name}`,
+        value: theirsSha,
+        force: true,
+      });
+      await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: head.name, force: true });
+    } else {
+      await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: theirsSha, force: true });
+    }
+    return ok(`Updating ${short(oursSha)}..${short(theirsSha)}\nFast-forward\n`);
+  }
+
+  const [baseT, oursT, theirsT] = await Promise.all([
+    base ? treeOfRef(ctx, base) : Promise.resolve({} as Record<string, string>),
+    treeOfRef(ctx, oursSha),
+    treeOfRef(ctx, theirsSha),
+  ]);
+  const paths = [
+    ...new Set([...Object.keys(baseT), ...Object.keys(oursT), ...Object.keys(theirsT)]),
+  ].sort();
+
+  const changes: { path: string; content: string | null }[] = [];
+  const conflicts: string[] = [];
+  for (const p of paths) {
+    const b = baseT[p] ?? null;
+    const o = oursT[p] ?? null;
+    const t = theirsT[p] ?? null;
+    if (o === t) continue; // identical (or both absent)
+    if (b === o) changes.push({ path: p, content: t }); // only their side moved
+    else if (b === t) continue; // only our side moved
+    else conflicts.push(p); // both sides moved differently
+  }
+
+  for (const change of changes) {
+    if (change.content === null) {
+      await ctx.fs.unlink(joinPath(ctx.dir, change.path)).catch(() => undefined);
+      await git.remove({ fs: ctx.gitFs, dir: ctx.dir, filepath: change.path });
+    } else {
+      await writeTextFile(ctx.fs, joinPath(ctx.dir, change.path), change.content);
+      await git.add({ fs: ctx.gitFs, dir: ctx.dir, filepath: change.path });
+    }
+  }
+
+  if (conflicts.length === 0) {
+    const who = { ...ctx.author, timestamp: ctx.now(), timezoneOffset: 0 };
+    const message = `Merge branch '${cmd.branch}'`;
+    await git.commit({
+      fs: ctx.gitFs,
+      dir: ctx.dir,
+      message,
+      author: who,
+      committer: who,
+      parent: [oursSha, theirsSha],
+    });
+    return ok(`Merge made by the 'ort' strategy.\n`);
+  }
+
+  for (const p of conflicts) {
+    const marked =
+      `<<<<<<< HEAD\n${oursT[p] ?? ''}` +
+      `=======\n${theirsT[p] ?? ''}` +
+      `>>>>>>> ${cmd.branch}\n`;
+    await writeTextFile(ctx.fs, joinPath(ctx.dir, p), marked);
+  }
+  await writeTextFile(ctx.fs, joinPath(ctx.dir, '.git', 'MERGE_HEAD'), theirsSha + '\n');
+  return fail(
+    `Auto-merging ${conflicts.join(', ')}\n` +
+      `CONFLICT (content): Merge conflict in ${conflicts[0]}\n` +
+      'Automatic merge failed; fix conflicts and then commit the result.\n',
   );
 }
 

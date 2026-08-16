@@ -9,6 +9,11 @@ export type ParsedCommand =
   | { cmd: 'log'; oneline: boolean; maxCount: number | null }
   | { cmd: 'diff'; staged: boolean; paths: string[] }
   | { cmd: 'restore'; paths: string[]; staged: boolean; worktree: boolean }
+  | { cmd: 'branch'; name: string | null; deleteName: string | null }
+  | { cmd: 'switch'; name: string; create: boolean }
+  | { cmd: 'checkout'; name: string; create: boolean }
+  | { cmd: 'merge'; branch: string }
+  | { cmd: 'tag'; name: string }
   | { cmd: 'unsupported'; name: string; args: string[] };
 
 export type ParseResult =
@@ -18,7 +23,6 @@ export type ParseResult =
 // Real git commands Gitsy does not teach yet. The terminal gate (Phase 3)
 // turns these into the in-fiction "not yet unlocked" message.
 const LATER_COMMANDS = new Set([
-  'branch', 'switch', 'checkout', 'merge', 'tag',
   'remote', 'clone', 'fetch', 'push', 'pull',
   'reset', 'revert', 'cherry-pick', 'rebase', 'stash',
   'reflog', 'bisect', 'blame', 'worktree', 'show', 'rm', 'mv', 'config',
@@ -32,6 +36,11 @@ const USAGE: Record<string, string> = {
   log: 'usage: git log [<options>] [<revision-range>]',
   diff: 'usage: git diff [<options>] [--] [<path>...]',
   restore: 'usage: git restore [<options>] [--] <file>...',
+  branch: 'usage: git branch [<options>] [<branch-name>]',
+  switch: 'usage: git switch [<options>] <branch>',
+  checkout: 'usage: git checkout [<options>] <branch>',
+  merge: 'usage: git merge [<options>] <branch>',
+  tag: 'usage: git tag [<options>] <tag-name>',
 };
 
 /** Shell-ish tokenizer: whitespace splits, single and double quotes group.
@@ -200,6 +209,69 @@ export function parseCommand(input: string): ParseResult {
       if (paths.length === 0) return err('fatal: you must specify path(s) to restore');
       if (!staged) worktree = true; // real default: worktree only
       return { ok: true, command: { cmd: 'restore', paths, staged, worktree } };
+    }
+
+    case 'branch': {
+      let deleteName: string | null = null;
+      let name: string | null = null;
+      for (let i = 0; i < rest.length; i++) {
+        const t = rest[i];
+        if (t === '-d' || t === '-D' || t === '--delete') {
+          const value = rest[++i];
+          if (value === undefined) return err('fatal: branch name required\n' + USAGE.branch);
+          deleteName = value;
+        } else if (t.startsWith('-')) {
+          return unknownOption('branch', t);
+        } else {
+          name = t;
+        }
+      }
+      return { ok: true, command: { cmd: 'branch', name, deleteName } };
+    }
+
+    case 'switch':
+    case 'checkout': {
+      const verb = name as 'switch' | 'checkout'; // loop below shadows `name`
+      let create = false;
+      let branchName: string | null = null;
+      for (let i = 0; i < rest.length; i++) {
+        const t = rest[i];
+        if (t === '-c' || t === '-b') {
+          const value = rest[++i];
+          if (value === undefined) return err(`fatal: missing branch name\n${USAGE[verb]}`);
+          branchName = value;
+          create = true;
+        } else if (t === '--') {
+          continue;
+        } else if (t.startsWith('-')) {
+          return unknownOption(verb, t);
+        } else {
+          branchName = t;
+        }
+      }
+      if (!branchName) return err(`fatal: missing branch name\n${USAGE[verb]}`);
+      return { ok: true, command: { cmd: verb, name: branchName, create } };
+    }
+
+    case 'merge': {
+      let branch: string | null = null;
+      for (const t of rest) {
+        if (t === '--') continue;
+        else if (t.startsWith('-')) return unknownOption('merge', t);
+        else branch = t;
+      }
+      if (!branch) return err('fatal: no branch specified\n' + USAGE.merge);
+      return { ok: true, command: { cmd: 'merge', branch } };
+    }
+
+    case 'tag': {
+      let name: string | null = null;
+      for (const t of rest) {
+        if (t.startsWith('-')) return unknownOption('tag', t);
+        name = t;
+      }
+      if (!name) return err('fatal: tag name required\n' + USAGE.tag);
+      return { ok: true, command: { cmd: 'tag', name } };
     }
 
     default:

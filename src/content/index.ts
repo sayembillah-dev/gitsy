@@ -7,8 +7,9 @@ import type { LevelDef } from '@/core/types';
 import act101 from './levels/act1-01-first-commit.json';
 import act102 from './levels/act1-02-take-it-back.json';
 import act103 from './levels/act1-03-stage-with-intent.json';
+import act201 from './levels/act2-01-merge-two-branches.json';
 
-const parsed = [act101, act102, act103].map((json) => parseLevelFile(json));
+const parsed = [act101, act102, act103, act201].map((json) => parseLevelFile(json));
 
 export const levelList: LevelFile[] = parsed;
 

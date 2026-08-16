@@ -1,0 +1,54 @@
+{
+  "id": "act2-01-merge-two-branches",
+  "act": 2,
+  "title": "Two lines of work",
+  "brief": "main moved ahead with app work while the feature branch added notes on its own line of history. Two branches, two commits, one base. Bring the feature work into main.",
+  "setup": [
+    { "op": "commit", "message": "base", "files": { "app.txt": "app v1\n" } },
+    { "op": "branch", "name": "feature" },
+    { "op": "commit", "message": "main work", "files": { "app.txt": "app v2\n" } },
+    { "op": "checkout", "ref": "feature" },
+    { "op": "commit", "message": "feature work", "files": { "notes.txt": "notes v1\n" } },
+    { "op": "checkout", "ref": "main" }
+  ],
+  "unlocked": ["status", "log", "branch", "switch", "checkout", "merge", "tag"],
+  "goals": [
+    {
+      "assert": "commitReachable",
+      "args": ["HEAD", "Merge branch 'feature'"],
+      "label": "A merge commit joins feature into main"
+    },
+    {
+      "assert": "commitCount",
+      "args": ["HEAD", 4],
+      "label": "Four commits reachable: base, both lines of work, the merge"
+    },
+    {
+      "assert": "headIsOn",
+      "args": ["main"],
+      "label": "You are still on main"
+    },
+    {
+      "assert": "workingTreeClean",
+      "args": [],
+      "label": "Working tree is clean"
+    }
+  ],
+  "diagnostics": [
+    {
+      "when": "headIsOn",
+      "args": ["feature"],
+      "say": "You are on feature. The merge brings work INTO the branch you stand on: switch back to main first."
+    }
+  ],
+  "hints": [
+    "git log --oneline shows main's line; the feature branch holds its own commit.",
+    "Standing on main, run: git merge feature"
+  ],
+  "par": 2,
+  "solution": ["git branch", "git merge feature"],
+  "wrongSolutions": [
+    ["git status"],
+    ["git switch feature"]
+  ]
+}

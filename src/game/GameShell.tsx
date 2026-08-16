@@ -7,7 +7,9 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { getLevel, levelList } from '@/content';
 import { levelDefOf } from '@/core/levelSchema';
+import type { RepoSnapshot } from '@/core/types';
 import { getEngine } from '@/engine/engineClient';
+import GraphSvg from './GraphSvg';
 import { appendLog, loadLog } from './persist';
 import { useGameStore } from './store';
 import Terminal from './Terminal';
@@ -16,6 +18,7 @@ import { TerminalSession } from './terminalCore';
 export default function GameShell({ levelId }: { levelId: string }) {
   const level = getLevel(levelId);
   const [session, setSession] = useState<TerminalSession | null>(null);
+  const [snapshot, setSnapshot] = useState<RepoSnapshot | null>(null);
   const [done, setDone] = useState(false);
   const booted = useRef(false);
 
@@ -24,9 +27,10 @@ export default function GameShell({ levelId }: { levelId: string }) {
     booted.current = true;
     void (async () => {
       const engine = await getEngine();
-      await engine.buildLevel(level.setup);
+      const first = await engine.buildLevel(level.setup);
       const entries = await loadLog(level.id);
       useGameStore.getState().hydrate(entries);
+      setSnapshot(first);
       setSession(
         new TerminalSession({
           engine,
@@ -87,17 +91,33 @@ export default function GameShell({ levelId }: { levelId: string }) {
         </div>
       ) : null}
 
-      <section className="min-h-[24rem] flex-1 overflow-hidden rounded-lg border border-rule bg-ground">
-        {session ? (
-          <Terminal
-            session={session}
-            history={useGameStore.getState().commandLog}
-            onComplete={() => setDone(true)}
-          />
-        ) : (
-          <p className="p-4 font-mono text-sm text-ink-dim">booting the git engine…</p>
-        )}
-      </section>
+      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
+        <section className="min-h-[24rem] overflow-hidden rounded-lg border border-rule bg-ground">
+          {session ? (
+            <Terminal
+              session={session}
+              history={useGameStore.getState().commandLog}
+              onComplete={() => setDone(true)}
+              onSnapshot={setSnapshot}
+            />
+          ) : (
+            <p className="p-4 font-mono text-sm text-ink-dim">booting the git engine…</p>
+          )}
+        </section>
+
+        <section className="overflow-auto rounded-lg border border-rule bg-panel">
+          <p className="border-b border-rule px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-ink-dim">
+            commit graph
+          </p>
+          <div className="p-2">
+            {snapshot ? (
+              <GraphSvg snapshot={snapshot} />
+            ) : (
+              <p className="p-3 font-mono text-xs text-ink-dim">waiting for the engine…</p>
+            )}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

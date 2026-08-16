@@ -9,7 +9,7 @@
 import git, { STAGE, TREE } from 'isomorphic-git';
 import type { RawCommit, RawRepo } from '@/core/normalize';
 import type { FileEntry } from '@/core/types';
-import { joinPath, readTextFile, type EngineContext } from './fsx';
+import { joinPath, pathExists, readTextFile, type EngineContext } from './fsx';
 
 /** [path, HEAD, workdir, stage] codes, same shape as isomorphic-git's
  *  statusMatrix so executor logic mirrors real git semantics. */
@@ -41,7 +41,7 @@ async function refMap(
   return out;
 }
 
-async function flattenTree(ctx: EngineContext, treeOid: string): Promise<Record<string, string>> {
+export async function flattenTree(ctx: EngineContext, treeOid: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   const visit = async (oid: string, prefix: string): Promise<void> => {
     const { tree } = await git.readTree({ fs: ctx.gitFs, dir: ctx.dir, oid });
@@ -163,6 +163,7 @@ async function filePanels(
   rows: StatusRow[],
   stageOids: Map<string, string>,
   workdir: Map<string, WorkdirFile>,
+  merging: boolean,
 ): Promise<{ workingTree: FileEntry[]; index: FileEntry[] }> {
   const workingTree: FileEntry[] = [];
   const index: FileEntry[] = [];
@@ -172,8 +173,12 @@ async function filePanels(
       if (h === 1 || s > 0) workingTree.push({ path, status: 'deleted', content: '' });
     } else {
       const content = workdir.get(path)?.content ?? '';
-      const status: FileEntry['status'] =
+      let status: FileEntry['status'] =
         h === 0 && s === 0 ? 'untracked' : w === 1 || s === 2 ? 'clean' : 'modified';
+      // Mid-merge marker files surface as conflicts, not plain modifications.
+      if (merging && status === 'modified' && content.includes('<<<<<<< ')) {
+        status = 'conflicted';
+      }
       workingTree.push({ path, status, content });
     }
 
@@ -227,7 +232,8 @@ export async function readRawRepo(ctx: EngineContext): Promise<RawRepo> {
   const rows = await statusRows(ctx);
   const stageOidMap = await indexOids(ctx);
   const workdir = await workdirFiles(ctx);
-  const { workingTree, index } = await filePanels(ctx, rows, stageOidMap, workdir);
+  const merging = await pathExists(ctx.fs, joinPath(ctx.dir, '.git', 'MERGE_HEAD'));
+  const { workingTree, index } = await filePanels(ctx, rows, stageOidMap, workdir, merging);
 
   return {
     commits: [...commits.values()],

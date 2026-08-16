@@ -16,10 +16,12 @@ export default function Terminal({
   session,
   history,
   onComplete,
+  onSnapshot,
 }: {
   session: TerminalSession;
   history: string[];
   onComplete?: () => void;
+  onSnapshot?: (snapshot: import('@/core/types').RepoSnapshot) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const completedRef = useRef(false);
@@ -79,6 +81,7 @@ export default function Terminal({
           term.writeln('  level complete. every goal is green.');
           onComplete?.();
         }
+        if (r.snapshot) onSnapshot?.(r.snapshot);
         if (line && !session.inPatch) {
           localHistory.push(line);
           histIdx = localHistory.length;

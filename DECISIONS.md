@@ -91,3 +91,53 @@ Format: date, what, why.
   runtime never crashes the game loop.
 - Gate passed: 85 tests across 10 files, including levels.spec.ts replaying
   all 3 levels' canonical and wrong solutions through the real engine.
+
+## 2026-08-17: Phase 3 terminal
+
+- `git add -p` runs as an engine-side session (`src/engine/patch.ts`). The
+  frozen `GitEngine` type is untouched: `createEngine` returns `PatchEngine`
+  (GitEngine + `answer(input)`), an engine-layer extension. Hunk staging uses
+  the write-stage-restore trick, safe because statuses are content-hash based.
+  `s`/`e` answers stay in scope-refusals with real-shaped text.
+- Patch answers persist as `patch-answer: <key>` log entries so Phase 6 undo
+  can replay sessions deterministically. Answers do not count for maxCommands;
+  the single `git add -p` command does. Locked (in-fiction) rejections never
+  reach the engine and never count.
+- `TerminalSession` (src/game/terminalCore.ts) holds ALL game logic: the gate
+  test drives it line by line, which is playing by typing. Terminal.tsx is
+  only keyboard + paint.
+- Empty-commit refusal text is `no changes added to commit` on stdout (real
+  git prints it there, exit 1). Terminal renders stdout and stderr alike.
+- Level content registry at `src/content/index.ts`: JSON imports validated
+  through zod once at module load.
+- Landing now links to /play/act1-01-first-commit.
+- Gate passed: 98 tests / 12 files, next build clean, /play route HTTP 200.
+
+## 2026-08-17: Phase 4 graph renderer + Act 2 engine commands
+
+- Parser grew Act 2: branch (list/create/-d), switch, checkout (-b), merge,
+  tag. All branch-shaped. `checkout <path>` deliberately does NOT exist:
+  Act 1 teaches `restore`, and ambiguous pathspecs answer with the real
+  "did not match any file(s)" text.
+- Merge is hand-rolled (deterministic, no reliance on isomorphic-git's merge):
+  ancestor walk finds the base; base === theirs: "Already up to date.";
+  base === ours: fast-forward via writeRef + checkout --force; otherwise a
+  path-level 3-way. Both-sides-different paths get marker files plus a
+  `.git/MERGE_HEAD`; `git commit` then refuses while markers remain and
+  creates the two-parent commit (git.commit `parent` override) once clean.
+- Dirty-tree switch/merge refusal is NOT implemented: level fiction controls
+  tree state. Revisit if an Act 2 level needs the refusal as the antagonist.
+- readState marks a workdir file `conflicted` only when MERGE_HEAD exists AND
+  the content carries `<<<<<<< `. Content-hash statuses stay the source of
+  truth everywhere else.
+- Graph layout is pure core (`src/core/graphLayout.ts`): rows from a
+  tips-first topological walk (hash tie-breaks, no timestamps), lanes from
+  first-parent chains with freed-lane reuse. Rendering (GraphSvg.tsx) is
+  framer-motion springs keyed on StructHash: pop-in for new commits, glide
+  for lane moves. The `rewrites` morph map stays deferred to Act 4 per the
+  plan's one sanctioned type change.
+- One Act 2 level ships (act2-01-merge-two-branches) so levels.spec covers
+  the merge path forever. Player file EDITING is still impossible; Act 2
+  conflict-resolution levels need a small editor surface, planned for the
+  Phase 5 panels.
+- Gate passed: 114 tests / 14 files, tsc + next build clean, play route 200.
