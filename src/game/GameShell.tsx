@@ -9,17 +9,21 @@ import { getLevel, levelList } from '@/content';
 import { levelDefOf } from '@/core/levelSchema';
 import type { RepoSnapshot } from '@/core/types';
 import { getEngine } from '@/engine/engineClient';
+import FileEditor from './FileEditor';
 import GraphSvg from './GraphSvg';
 import { appendLog, loadLog } from './persist';
 import { useGameStore } from './store';
 import Terminal from './Terminal';
 import { TerminalSession } from './terminalCore';
+import ThreeTrees from './ThreeTrees';
 
 export default function GameShell({ levelId }: { levelId: string }) {
   const level = getLevel(levelId);
   const [session, setSession] = useState<TerminalSession | null>(null);
   const [snapshot, setSnapshot] = useState<RepoSnapshot | null>(null);
   const [done, setDone] = useState(false);
+  /** path === null means the player is creating a new file. */
+  const [editing, setEditing] = useState<{ path: string | null; content: string } | null>(null);
   const booted = useRef(false);
 
   useEffect(() => {
@@ -91,6 +95,17 @@ export default function GameShell({ levelId }: { levelId: string }) {
         </div>
       ) : null}
 
+      {snapshot && session ? (
+        <ThreeTrees
+          snapshot={snapshot}
+          onEditFile={(path) => {
+            const entry = snapshot.workingTree.find((f) => f.path === path);
+            setEditing({ path, content: entry?.content ?? '' });
+          }}
+          onNewFile={() => setEditing({ path: null, content: '' })}
+        />
+      ) : null}
+
       <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
         <section className="min-h-[24rem] overflow-hidden rounded-lg border border-rule bg-ground">
           {session ? (
@@ -118,6 +133,21 @@ export default function GameShell({ levelId }: { levelId: string }) {
           </div>
         </section>
       </div>
+
+      {editing && session ? (
+        <FileEditor
+          path={editing.path}
+          initialContent={editing.content}
+          onClose={() => setEditing(null)}
+          onSave={(path, content) => {
+            void session.editFile(path, content).then((r) => {
+              setSnapshot(r.snapshot);
+              if (r.complete) setDone(true);
+              if (r.ok) setEditing(null);
+            });
+          }}
+        />
+      ) : null}
     </main>
   );
 }

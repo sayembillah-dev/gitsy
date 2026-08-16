@@ -47,7 +47,17 @@ export interface PatchEngine extends GitEngine {
   answer(input: string): Promise<CommandResult>;
 }
 
-export function createEngine(deps: EngineDeps): PatchEngine {
+/**
+ * Phase 5 extension: the file-editor surface. `editFile` is how the UI's
+ * editor panel saves bytes to the workdir. It is deliberately NOT a terminal
+ * command (no parser grammar, no commandCount): editing a file is something
+ * you do in your editor, not something git sees.
+ */
+export interface EditorEngine extends PatchEngine {
+  editFile(path: string, content: string): Promise<CommandResult>;
+}
+
+export function createEngine(deps: EngineDeps): EditorEngine {
   const gitFs = deps.fs as any;
   const fs = ((gitFs.promises ?? gitFs) as FsLike);
   const ctx: EngineContext = {
@@ -158,6 +168,28 @@ export function createEngine(deps: EngineDeps): PatchEngine {
           snapshot: await snapshot(),
         };
       }
+    },
+
+    async editFile(path: string, content: string): Promise<CommandResult> {
+      const raw = path.trim().replace(/\\/g, '/');
+      const clean = raw.replace(/^\/+/, '').replace(/\/+$/, '');
+      const segments = clean.split('/');
+      const invalid =
+        raw.length === 0 ||
+        raw.startsWith('/') || // absolute (or UNC after the backslash fold)
+        /^[A-Za-z]:/.test(raw) ||
+        segments.some((s) => s === '' || s === '..') ||
+        segments[0] === '.git';
+      if (invalid) {
+        return {
+          ok: false,
+          stdout: '',
+          stderr: `fatal: invalid path '${path}'\n`,
+          snapshot: await snapshot(),
+        };
+      }
+      await writeTextFile(fs, joinPath(deps.dir, clean), content);
+      return { ok: true, stdout: '', stderr: '', snapshot: await snapshot() };
     },
 
     snapshot,

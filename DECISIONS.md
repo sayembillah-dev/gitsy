@@ -141,3 +141,37 @@ Format: date, what, why.
   conflict-resolution levels need a small editor surface, planned for the
   Phase 5 panels.
 - Gate passed: 114 tests / 14 files, tsc + next build clean, play route 200.
+
+## 2026-08-17: Phase 5 three-trees panels + reset + file editor
+
+- `git reset` lands with the mode-flags subset: --soft moves the ref only,
+  --mixed (default) also resets the index, --hard resets all three trees.
+  Targets: HEAD, HEAD~n / HEAD^n suffixes, branch, tag, SHA prefix. Path
+  resets (`git reset <file>`) are refused with a hint toward
+  `git restore --staged`; that lesson stays with restore.
+- --mixed implementation: snapshot workdir bytes, writeRef + checkout
+  --force (resets index AND workdir), then restore the workdir bytes. Safe
+  for the same reason write-stage-restore is: statuses are content-hash
+  based, never stat caches. Untracked files survive every mode.
+- Any reset mode clears MERGE_HEAD (real git behaviour), which makes
+  `git reset --hard HEAD` the taught way to abort a botched merge.
+- File editing is now possible via an engine-layer extension
+  `EditorEngine extends PatchEngine { editFile(path, content) }`: types.ts
+  stays frozen again. It is NOT a terminal command (no grammar, no
+  commandCount); the UI editor panel calls it directly. Paths are validated
+  against traversal/absolute/.git writes.
+- Editor saves persist as `edit-file: <path> <uri-encoded content>` log
+  entries, same replay idea as patch-answer: Phase 6 undo/reset replays
+  stay deterministic, and levels.spec routes those directive lines to
+  engine.editFile so canonical solutions may edit files.
+- Three-trees panel (src/game/ThreeTrees.tsx + pure src/game/trees.ts):
+  working tree | index | object store side by side, FileStatus hues only,
+  framer-motion springs on chips (pop-in, layout glide, pulsing conflict
+  dot). Working-tree chips open the editor; "+ new file" creates untracked
+  files. The object-store panel is derived from the head commit tree.
+- act2-02-resolve-a-conflict ships: first level whose canonical solution
+  contains an edit-file directive. levels.spec covers conflict resolution
+  forever.
+- Gate passed: 130 tests / 16 files, tsc + next build clean, play routes
+  (act2-01, act2-02) HTTP 200. Panel transitions are codified in
+  test/panels.spec.ts; the visual pass still wants human eyes before Act 4.

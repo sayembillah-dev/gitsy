@@ -14,6 +14,7 @@ export type ParsedCommand =
   | { cmd: 'checkout'; name: string; create: boolean }
   | { cmd: 'merge'; branch: string }
   | { cmd: 'tag'; name: string }
+  | { cmd: 'reset'; mode: 'soft' | 'mixed' | 'hard'; target: string | null }
   | { cmd: 'unsupported'; name: string; args: string[] };
 
 export type ParseResult =
@@ -24,7 +25,7 @@ export type ParseResult =
 // turns these into the in-fiction "not yet unlocked" message.
 const LATER_COMMANDS = new Set([
   'remote', 'clone', 'fetch', 'push', 'pull',
-  'reset', 'revert', 'cherry-pick', 'rebase', 'stash',
+  'revert', 'cherry-pick', 'rebase', 'stash',
   'reflog', 'bisect', 'blame', 'worktree', 'show', 'rm', 'mv', 'config',
 ]);
 
@@ -41,6 +42,7 @@ const USAGE: Record<string, string> = {
   checkout: 'usage: git checkout [<options>] <branch>',
   merge: 'usage: git merge [<options>] <branch>',
   tag: 'usage: git tag [<options>] <tag-name>',
+  reset: 'usage: git reset [--soft | --mixed | --hard] [<commit>]',
 };
 
 /** Shell-ish tokenizer: whitespace splits, single and double quotes group.
@@ -272,6 +274,31 @@ export function parseCommand(input: string): ParseResult {
       }
       if (!name) return err('fatal: tag name required\n' + USAGE.tag);
       return { ok: true, command: { cmd: 'tag', name } };
+    }
+
+    case 'reset': {
+      // Act 4 lands the mode-flags subset early (Phase 5 gate): resetting
+      // PATHS stays unsupported; `git restore --staged` covers that lesson.
+      let mode: 'soft' | 'mixed' | 'hard' = 'mixed'; // real git's default
+      let target: string | null = null;
+      for (const t of rest) {
+        if (t === '--soft' || t === '--mixed' || t === '--hard') {
+          mode = t.slice(2) as 'soft' | 'mixed' | 'hard';
+        } else if (t === '--') {
+          continue;
+        } else if (t.startsWith('-')) {
+          return unknownOption('reset', t);
+        } else if (target === null) {
+          target = t;
+        } else {
+          return err(
+            'fatal: resetting paths is not supported in Gitsy\n' +
+              'hint: to unstage a file, use git restore --staged <file>\n' +
+              USAGE.reset,
+          );
+        }
+      }
+      return { ok: true, command: { cmd: 'reset', mode, target } };
     }
 
     default:

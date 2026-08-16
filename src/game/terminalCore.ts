@@ -4,7 +4,7 @@
 
 import { evaluate } from '@/core/evaluate';
 import type { LevelDef, RepoSnapshot } from '@/core/types';
-import type { PatchEngine } from '@/engine/createEngine';
+import type { EditorEngine } from '@/engine/createEngine';
 import { PATCH_PROMPT } from '@/engine/patch';
 
 /** Which act unlocks a command (curriculum table, section 7). */
@@ -45,7 +45,7 @@ export interface SubmitResult {
 }
 
 export interface TerminalSessionOpts {
-  engine: PatchEngine;
+  engine: EditorEngine;
   level: LevelDef;
   /** Every engine-bound line is reported here (plus patch-answer entries). */
   onLog?: (entry: string) => void;
@@ -81,6 +81,21 @@ export class TerminalSession {
   /** Completion candidates for Tab: the unlocked set plus builtins. */
   completions(): string[] {
     return [...this.opts.level.unlocked, ...BUILTINS].sort();
+  }
+
+  /**
+   * UI editor save (Phase 5). Not a terminal command: never counted against
+   * maxCommands. Logged as an `edit-file:` directive (path +
+   * URI-encoded content) so Phase 6 undo/reset replay stays deterministic.
+   */
+  async editFile(
+    path: string,
+    content: string,
+  ): Promise<{ ok: boolean; snapshot: RepoSnapshot; complete: boolean }> {
+    const r = await this.opts.engine.editFile(path, content);
+    if (r.ok) this.opts.onLog?.(`edit-file: ${path} ${encodeURIComponent(content)}`);
+    const result = evaluate(r.snapshot, this.opts.level, { commandCount: this.commands });
+    return { ok: r.ok, snapshot: r.snapshot, complete: result.complete };
   }
 
   async submit(rawLine: string): Promise<SubmitResult> {

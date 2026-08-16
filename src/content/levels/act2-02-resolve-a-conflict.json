@@ -1,0 +1,54 @@
+{
+  "id": "act2-02-resolve-a-conflict",
+  "act": 2,
+  "title": "Resolve a conflict",
+  "brief": "main and feature both rewrote app.txt. Merge feature into main: git will stop at the conflict and mark the file. Open app.txt from the working tree panel, decide the final text, delete the marker lines, then stage and commit.",
+  "setup": [
+    { "op": "commit", "message": "base", "files": { "app.txt": "version 1\n" } },
+    { "op": "branch", "name": "feature" },
+    { "op": "commit", "message": "main work", "files": { "app.txt": "version from main\n" } },
+    { "op": "checkout", "ref": "feature" },
+    { "op": "commit", "message": "feature work", "files": { "app.txt": "version from feature\n" } },
+    { "op": "checkout", "ref": "main" }
+  ],
+  "unlocked": [
+    "status",
+    "log",
+    "diff",
+    "add",
+    "commit",
+    "restore",
+    "branch",
+    "switch",
+    "checkout",
+    "merge",
+    "tag"
+  ],
+  "goals": [
+    { "assert": "headIsOn", "args": ["main"], "label": "still on main" },
+    { "assert": "commitCount", "args": ["HEAD", 4], "label": "the merge commit exists" },
+    { "assert": "workingTreeClean", "label": "working tree clean" }
+  ],
+  "diagnostics": [
+    {
+      "when": "hasConflict",
+      "say": "app.txt carries conflict markers. Click it in the working tree panel, keep the final text, and delete every line starting with <<<<<<<, =======, or >>>>>>>. Then git add app.txt and commit."
+    }
+  ],
+  "hints": [
+    "Start with git merge feature. Git stops and marks app.txt.",
+    "Click app.txt in the working tree panel to open the editor. The final content is your decision.",
+    "Save, then: git add app.txt, git commit -m \"merge main and feature\"."
+  ],
+  "par": 4,
+  "solution": [
+    "git merge feature",
+    "edit-file: app.txt version%20from%20main%20and%20feature%0A",
+    "git add app.txt",
+    "git commit -m \"merge main and feature\""
+  ],
+  "wrongSolutions": [
+    ["git merge feature"],
+    ["git merge feature", "git add app.txt", "git commit -m \"merge with markers\""]
+  ]
+}

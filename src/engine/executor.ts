@@ -59,6 +59,8 @@ export async function execute(ctx: EngineContext, cmd: ParsedCommand): Promise<E
       return execMerge(ctx, cmd);
     case 'tag':
       return execTag(ctx, cmd);
+    case 'reset':
+      return execReset(ctx, cmd);
     case 'unsupported':
       return fail(`${cmd.name}: not available yet. It unlocks in a later act.\n`);
   }
@@ -584,4 +586,140 @@ async function execRestore(ctx: EngineContext, cmd: Cmd<'restore'>): Promise<Exe
     }
   }
   return ok();
+}
+
+// ---- reset ----------------------------------------------------------------
+
+const UNKNOWN_REV = (rev: string): string =>
+  `fatal: ambiguous argument '${rev}': unknown revision or path not in the working tree.\n` +
+  `Use '--' to separate paths from revisions, like this:\n` +
+  `'git <command> [<revision>...] -- [<file>...]'\n`;
+
+/** Resolves HEAD, HEAD~n / HEAD^n suffixes, branch and tag names, and SHA
+ *  prefixes (repos are tiny, so a prefix scan across every ref is cheap). */
+async function resolveRev(ctx: EngineContext, rev: string): Promise<string | null> {
+  const headM = /^HEAD((?:[~^]\d*)*)$/.exec(rev);
+  if (headM) {
+    let sha: string;
+    try {
+      sha = await git.resolveRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', depth: 10 });
+    } catch {
+      return null;
+    }
+    for (const step of headM[1].match(/[~^]\d*/g) ?? []) {
+      const n = step.length > 1 ? Number(step.slice(1)) : 1;
+      if (step[0] === '~') {
+        const log = await git.log({ fs: ctx.gitFs, dir: ctx.dir, ref: sha, depth: n + 1 });
+        if (log.length <= n) return null;
+        sha = log[n].oid;
+      } else {
+        const { commit } = await git.readCommit({ fs: ctx.gitFs, dir: ctx.dir, oid: sha });
+        const parent = commit.parent[n - 1];
+        if (!parent) return null;
+        sha = parent;
+      }
+    }
+    return sha;
+  }
+
+  const branch = await branchSha(ctx, rev);
+  if (branch) return branch;
+  try {
+    return await git.resolveRef({
+      fs: ctx.gitFs,
+      dir: ctx.dir,
+      ref: `refs/tags/${rev}`,
+      depth: 10,
+    });
+  } catch {
+    // not a tag either: fall through to the SHA-prefix scan
+  }
+  if (/^[0-9a-f]{4,40}$/.test(rev)) {
+    const refs = [
+      ...(await git.listBranches({ fs: ctx.gitFs, dir: ctx.dir })).map((b) => `refs/heads/${b}`),
+      ...(await git.listTags({ fs: ctx.gitFs, dir: ctx.dir })).map((t) => `refs/tags/${t}`),
+    ];
+    const seen = new Set<string>();
+    for (const ref of refs) {
+      let log;
+      try {
+        log = await git.log({ fs: ctx.gitFs, dir: ctx.dir, ref });
+      } catch {
+        continue;
+      }
+      for (const entry of log) {
+        if (seen.has(entry.oid)) continue;
+        seen.add(entry.oid);
+        if (entry.oid.startsWith(rev)) return entry.oid;
+      }
+    }
+  }
+  return null;
+}
+
+async function execReset(ctx: EngineContext, cmd: Cmd<'reset'>): Promise<ExecOutput> {
+  const head = await headInfo(ctx);
+  const target = cmd.target ?? 'HEAD';
+  if (head.type === 'unborn') return fail(UNKNOWN_REV(target));
+
+  const targetSha = await resolveRev(ctx, target);
+  if (!targetSha) {
+    return fail(
+      UNKNOWN_REV(target) +
+        (target !== 'HEAD' ? 'hint: to unstage a file, use git restore --staged <file>\n' : ''),
+    );
+  }
+
+  // Any reset mode abandons an in-progress merge (real git clears MERGE_HEAD).
+  await ctx.fs.unlink(joinPath(ctx.dir, '.git', 'MERGE_HEAD')).catch(() => undefined);
+
+  // Move the ref HEAD points at (or HEAD itself when detached).
+  if (head.type === 'branch') {
+    await git.writeRef({
+      fs: ctx.gitFs,
+      dir: ctx.dir,
+      ref: `refs/heads/${head.name}`,
+      value: targetSha,
+      force: true,
+    });
+  } else {
+    await git.writeRef({ fs: ctx.gitFs, dir: ctx.dir, ref: 'HEAD', value: targetSha, force: true });
+  }
+  const checkoutRef = head.type === 'branch' ? head.name : targetSha;
+
+  if (cmd.mode === 'soft') return ok(); // ref moved; index and workdir untouched
+
+  if (cmd.mode === 'hard') {
+    await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: checkoutRef, force: true });
+    const { commit } = await git.readCommit({ fs: ctx.gitFs, dir: ctx.dir, oid: targetSha });
+    return ok(`HEAD is now at ${short(targetSha)} ${commit.message.split('\n')[0]}\n`);
+  }
+
+  // --mixed: the index takes the target tree while the workdir keeps its
+  // bytes. checkout --force resets BOTH, so snapshot the workdir first and
+  // put it back afterwards. Statuses are content-hash based, which makes
+  // this restore exact (the Phase 1 statusMatrix trap does not apply).
+  const before = await workdirFiles(ctx);
+  await git.checkout({ fs: ctx.gitFs, dir: ctx.dir, ref: checkoutRef, force: true });
+  const after = await workdirFiles(ctx);
+  for (const path of after.keys()) {
+    if (!before.has(path)) {
+      await ctx.fs.unlink(joinPath(ctx.dir, path)).catch(() => undefined);
+    }
+  }
+  for (const [path, file] of before) {
+    if (after.get(path)?.oid !== file.oid) {
+      await writeTextFile(ctx.fs, joinPath(ctx.dir, path), file.content);
+    }
+  }
+
+  // Real git reports what is now unstaged relative to the reset index.
+  const rows = await statusRows(ctx);
+  const lines: string[] = [];
+  for (const [path, , w, s] of rows) {
+    if (w === 2 && (s === 1 || s === 3)) lines.push(`M\t${path}`);
+    else if (w === 0 && s > 0) lines.push(`D\t${path}`);
+  }
+  if (lines.length === 0) return ok();
+  return ok(`Unstaged changes after reset:\n${lines.join('\n')}\n`);
 }
