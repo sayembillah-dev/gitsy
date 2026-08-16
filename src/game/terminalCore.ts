@@ -3,7 +3,7 @@
 // typing. Terminal.tsx is a thin keyboard/display wrapper around this.
 
 import { evaluate } from '@/core/evaluate';
-import type { LevelDef, RepoSnapshot } from '@/core/types';
+import type { EvaluationResult, LevelDef, RepoSnapshot } from '@/core/types';
 import type { EditorEngine } from '@/engine/createEngine';
 import { PATCH_PROMPT } from '@/engine/patch';
 
@@ -42,6 +42,7 @@ export interface SubmitResult {
   clear?: boolean;
   complete: boolean;
   snapshot?: RepoSnapshot;
+  evaluation?: EvaluationResult;
 }
 
 export interface TerminalSessionOpts {
@@ -49,6 +50,8 @@ export interface TerminalSessionOpts {
   level: LevelDef;
   /** Every engine-bound line is reported here (plus patch-answer entries). */
   onLog?: (entry: string) => void;
+  /** Restored command count after a replay (Phase 6). */
+  initialCommands?: number;
 }
 
 function commandNameOf(line: string): string {
@@ -66,16 +69,47 @@ function helpText(level: LevelDef): string {
 
 export class TerminalSession {
   private patchActive = false;
-  private commands = 0;
+  private commands: number;
+  private failed = 0;
+  private last: EvaluationResult | null = null;
 
-  constructor(private opts: TerminalSessionOpts) {}
+  constructor(private opts: TerminalSessionOpts) {
+    this.commands = opts.initialCommands ?? 0;
+  }
 
   get commandCount(): number {
     return this.commands;
   }
 
+  get failedCount(): number {
+    return this.failed;
+  }
+
   get inPatch(): boolean {
     return this.patchActive;
+  }
+
+  /** Latest evaluation, for the live goal checklist (Phase 6). */
+  get evaluation(): EvaluationResult | null {
+    return this.last;
+  }
+
+  /** Re-attaches state after a deterministic replay (undo/reset/refresh). */
+  restore(snap: RepoSnapshot, commandCount: number): void {
+    this.commands = commandCount;
+    this.last = evaluate(snap, this.opts.level, { commandCount });
+  }
+
+  /**
+   * Tiered hint ladder (Phase 6): a firing diagnostic always wins;
+   * otherwise the fallback hints escalate with the failed-command count.
+   */
+  hint(): string {
+    const diagnostic = this.last?.diagnostic;
+    if (diagnostic) return diagnostic;
+    const hints = this.opts.level.hints;
+    if (hints.length === 0) return 'git status is never wrong.';
+    return hints[Math.min(this.failed, hints.length - 1)];
   }
 
   /** Completion candidates for Tab: the unlocked set plus builtins. */
@@ -95,6 +129,7 @@ export class TerminalSession {
     const r = await this.opts.engine.editFile(path, content);
     if (r.ok) this.opts.onLog?.(`edit-file: ${path} ${encodeURIComponent(content)}`);
     const result = evaluate(r.snapshot, this.opts.level, { commandCount: this.commands });
+    this.last = result;
     return { ok: r.ok, snapshot: r.snapshot, complete: result.complete };
   }
 
@@ -107,7 +142,14 @@ export class TerminalSession {
       if (!r.stdout.endsWith(PATCH_PROMPT)) this.patchActive = false;
       onLog?.(`patch-answer: ${line}`);
       const result = evaluate(r.snapshot, level, { commandCount: this.commands });
-      return { stdout: r.stdout, stderr: r.stderr, complete: result.complete, snapshot: r.snapshot };
+      this.last = result;
+      return {
+        stdout: r.stdout,
+        stderr: r.stderr,
+        complete: result.complete,
+        snapshot: r.snapshot,
+        evaluation: result,
+      };
     }
 
     if (line === '') return { stdout: '', stderr: '', complete: false };
@@ -133,9 +175,17 @@ export class TerminalSession {
 
     const r = await engine.run(line);
     this.commands += 1;
+    if (!r.ok) this.failed += 1;
     onLog?.(line);
     if (r.stdout.endsWith(PATCH_PROMPT)) this.patchActive = true;
     const result = evaluate(r.snapshot, level, { commandCount: this.commands });
-    return { stdout: r.stdout, stderr: r.stderr, complete: result.complete, snapshot: r.snapshot };
+    this.last = result;
+    return {
+      stdout: r.stdout,
+      stderr: r.stderr,
+      complete: result.complete,
+      snapshot: r.snapshot,
+      evaluation: result,
+    };
   }
 }

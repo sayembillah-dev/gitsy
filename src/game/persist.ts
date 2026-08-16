@@ -47,6 +47,21 @@ export async function appendLog(levelId: string, entry: string): Promise<void> {
   }
 }
 
+/** Overwrites the whole record (undo/reset truncate the log). */
+export async function setLog(levelId: string, entries: string[]): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(entries, levelId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // best-effort
+  }
+}
+
 export async function clearLog(levelId: string): Promise<void> {
   try {
     const db = await openDb();

@@ -175,3 +175,24 @@ Format: date, what, why.
 - Gate passed: 130 tests / 16 files, tsc + next build clean, play routes
   (act2-01, act2-02) HTTP 200. Panel transitions are codified in
   test/panels.spec.ts; the visual pass still wants human eyes before Act 4.
+
+## 2026-08-17: Phase 6 level shell
+
+- Refresh now restores exact progress: boot REPLAYS the persisted command
+  log (src/game/replay.ts) after buildLevel. The log is the save file; repo
+  bytes are never persisted. `patch-answer:` and `edit-file:` directives
+  replay through engine.answer / engine.editFile.
+- undo = replay log[0..n-1]; reset = replay []. Both truncate the IndexedDB
+  record (new persist.setLog), rebuild a fresh TerminalSession, and bump a
+  key so xterm remounts against it (the terminal effect binds a session at
+  mount; swapping sessions without remount would keep the stale one).
+- TerminalSession grew: `restore(snap, commandCount)`, `evaluation` getter,
+  `failedCount`, and `hint()`: a firing diagnostic always wins, otherwise
+  the level's hint ladder escalates with failed-command count. UI surfaces
+  the ladder on demand (hint button) and after 45s idle.
+- Goal checklist binds to EvaluationResult and ticks live after every
+  submit and every editor save (SubmitResult now carries `evaluation`).
+- Complete screen: command count vs par, next-level link, replay button.
+- Gate: 133 tests / 17 files, tsc + next build clean. Full-loop-survives-
+  refresh is codified in test/replay.spec.ts (structural equality of
+  commits/panels; git SHAs are wall-clock display fields, never compared).

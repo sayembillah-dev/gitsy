@@ -17,11 +17,13 @@ export default function Terminal({
   history,
   onComplete,
   onSnapshot,
+  onEvaluation,
 }: {
   session: TerminalSession;
   history: string[];
   onComplete?: () => void;
   onSnapshot?: (snapshot: import('@/core/types').RepoSnapshot) => void;
+  onEvaluation?: (evaluation: import('@/core/types').EvaluationResult) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const completedRef = useRef(false);
@@ -51,7 +53,9 @@ export default function Terminal({
 
     let buffer = '';
     let histIdx = history.length;
-    const localHistory = [...history.filter((h) => !h.startsWith('patch-answer: '))];
+    const localHistory = [
+      ...history.filter((h) => !h.startsWith('patch-answer: ') && !h.startsWith('edit-file: ')),
+    ];
     let busy = false;
 
     const writeOut = (text: string) => {
@@ -82,6 +86,7 @@ export default function Terminal({
           onComplete?.();
         }
         if (r.snapshot) onSnapshot?.(r.snapshot);
+        if (r.evaluation) onEvaluation?.(r.evaluation);
         if (line && !session.inPatch) {
           localHistory.push(line);
           histIdx = localHistory.length;
