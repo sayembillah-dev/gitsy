@@ -3,7 +3,11 @@
 // commands, plus `patch-answer:` entries so Phase 6 undo can replay
 // interactive sessions deterministically.
 
-const DB_NAME = 'gitsy';
+// Dedicated database name. LightningFS in the worker used to open 'gitsy'
+// too (its constructor name is the DB name verbatim); the two stores raced
+// and whoever created the DB first left the other's object store missing,
+// which hung the engine boot on NotFoundError. One DB per consumer, always.
+const DB_NAME = 'gitsy-logs';
 const STORE = 'logs';
 
 function openDb(): Promise<IDBDatabase> {

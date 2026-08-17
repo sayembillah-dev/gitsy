@@ -6,6 +6,9 @@ import * as Comlink from 'comlink';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { createEngine } from './createEngine';
 
-const fs = new LightningFS('gitsy');
+// The constructor name is the IndexedDB database name verbatim. It must not
+// collide with the command-log DB in persist.ts: same-name DBs are created
+// by whoever opens first and the other side never gets its object store.
+const fs = new LightningFS('gitsy-repo');
 
 Comlink.expose(createEngine({ fs, dir: '/repo' }));

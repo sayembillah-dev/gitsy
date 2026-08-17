@@ -36,6 +36,9 @@ export default function GameShell({ levelId }: { levelId: string }) {
   const [termEpoch, setTermEpoch] = useState(0);
   /** Rewrite map from the last history-rewriting command (graph morph). */
   const [rewrites, setRewrites] = useState<Record<StructHash, StructHash> | undefined>(undefined);
+  /** Boot diagnostics: live stage under the placeholder, surfaced error on death. */
+  const [bootStage, setBootStage] = useState('queued');
+  const [bootError, setBootError] = useState<string | null>(null);
   const booted = useRef(false);
   const idleRef = useRef<number>(0);
   /** Telemetry: one event per attempt, on the first completion. */
@@ -60,28 +63,45 @@ export default function GameShell({ levelId }: { levelId: string }) {
   };
 
   // Boot: buildLevel, then replay the persisted log. The log is the save
-  // file; a refresh restores exact progress.
+  // file; a refresh restores exact progress. Every stage is marked to the
+  // console and shown live, so a hang names its suspect instead of sitting
+  // behind a silent placeholder.
   useEffect(() => {
     if (!level || booted.current) return;
     booted.current = true;
     void (async () => {
-      const engine = await getEngine();
-      const entries = await loadLog(level.id);
-      const snap = await replayEntries(engine, level.setup, entries);
-      useGameStore.getState().hydrate(entries);
-      const s = new TerminalSession({
-        engine,
-        level: levelDefOf(level),
-        onLog: (entry) => {
-          useGameStore.getState().appendCommand(entry);
-          void setLog(level.id, useGameStore.getState().commandLog);
-        },
-      });
-      s.restore(snap, commandCountOf(entries));
-      setSnapshot(snap);
-      setEvalState(s.evaluation);
-      setDone(s.evaluation?.complete ?? false);
-      setSession(s);
+      const t0 = performance.now();
+      const mark = (label: string) => {
+        setBootStage(label);
+        console.log(`[gitsy boot] ${label} (+${Math.round(performance.now() - t0)}ms)`);
+      };
+      try {
+        mark('spawning worker');
+        const engine = await getEngine();
+        mark('worker spawned');
+        const entries = await loadLog(level.id);
+        mark(`log loaded: ${entries.length} entries`);
+        mark('building level (first worker round trip)');
+        const snap = await replayEntries(engine, level.setup, entries);
+        mark('log replayed, engine ready');
+        useGameStore.getState().hydrate(entries);
+        const s = new TerminalSession({
+          engine,
+          level: levelDefOf(level),
+          onLog: (entry) => {
+            useGameStore.getState().appendCommand(entry);
+            void setLog(level.id, useGameStore.getState().commandLog);
+          },
+        });
+        s.restore(snap, commandCountOf(entries));
+        setSnapshot(snap);
+        setEvalState(s.evaluation);
+        setDone(s.evaluation?.complete ?? false);
+        setSession(s);
+      } catch (err) {
+        console.error('[gitsy boot] failed', err);
+        setBootError(err instanceof Error ? err.message : String(err));
+      }
     })();
   }, [level, levelId]);
 
@@ -223,7 +243,15 @@ export default function GameShell({ levelId }: { levelId: string }) {
 
       <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
         <section className="min-h-[24rem] overflow-hidden rounded-lg border border-rule bg-ground">
-          {session ? (
+          {bootError ? (
+            <div className="p-4 font-mono text-sm">
+              <p className="text-st-conflict">engine boot failed: {bootError}</p>
+              <p className="mt-2 text-xs leading-relaxed text-ink-dim">
+                console has [gitsy boot] stage timings. clearing site data (IndexedDB)
+                and reloading starts fresh if the local repo is corrupted.
+              </p>
+            </div>
+          ) : session ? (
             <Terminal
               key={termEpoch}
               session={session}
@@ -234,7 +262,9 @@ export default function GameShell({ levelId }: { levelId: string }) {
               onRewrites={setRewrites}
             />
           ) : (
-            <p className="p-4 font-mono text-sm text-ink-dim">booting the git engine…</p>
+            <p className="p-4 font-mono text-sm text-ink-dim">
+              booting the git engine… <span className="text-xs opacity-60">{bootStage}</span>
+            </p>
           )}
         </section>
 
