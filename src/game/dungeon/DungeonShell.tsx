@@ -175,7 +175,7 @@ export default function DungeonShell({ levelId }: { levelId: string }) {
           >
             reset
           </button>
-          <Link href={`/play/${level.id}`} className="text-ink-dim hover:text-ink">
+          <Link href={`/classic/${level.id}`} className="text-ink-dim hover:text-ink">
             classic
           </Link>
           <Link href="/" className="text-ink-dim hover:text-ink">
@@ -185,6 +185,13 @@ export default function DungeonShell({ levelId }: { levelId: string }) {
       </header>
 
       <p className="max-w-2xl text-sm leading-relaxed text-ink-dim">{level.brief}</p>
+      {level.act === 1 ? (
+        <p className="font-mono text-xs text-st-head">
+          first steps: arrows or WASD walk the passages · Enter wakes the Console, where you
+          type real git · the Satchel below holds your scrolls (click one to edit) · break
+          every seal on the Door to descend
+        </p>
+      ) : null}
 
       {/* the Door: every goal is a seal */}
       <section className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-rule bg-panel px-3 py-2">

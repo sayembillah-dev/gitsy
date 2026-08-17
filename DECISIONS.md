@@ -364,3 +364,6 @@ Format: date, what, why.
   
 ## Phases D2-D4 - console, workshop, depths core (2026-08-17)  
 - D2: Console drawer (existing Terminal, real git) with modal key routing: Enter/Space casts, Esc walks, capture phase so xterm cannot swallow Esc. D3: Codex (FileEditor) opened from Satchel file chips colored by FileStatus; goals are seals on the Door strip; undo/reset preserved. D4 core: world reactions ride the existing snapshot pipeline, new chambers forge in, Keeper re-anchors on HEAD moves, ghosts fade; rewrites spectacle and scripted tutorial deferred into D5, which is a human playtest gate. One consolidated branch phase/d2-d4-dungeon under token budget; classic /play still default.  
+  
+## Phase D5 - route swap plus tutorial-lite (2026-08-17)  
+- Dungeon is now the default at /play; classic shell preserved at /classic. Act 1 floors carry a one-line controls whisper. Scripted tutorial sequence, juice pass, and the 3-novice playtest remain as the human leg before deploy.  

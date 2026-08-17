@@ -1,12 +1,12 @@
-import PlayClient from '@/game/PlayClient';
+import DungeonClient from '@/game/dungeon/DungeonClient';
 
-// Thin wrapper (BUILD-PLAN §2). Server component: its only job is to hand the
-// route param to the client boundary. The island itself is ssr:false.
+// D5 route swap (DUNGEON-SPEC.md): the dungeon is the default game now.
+// The classic terminal-first shell lives on at /classic/[levelId].
 export default async function PlayPage({
   params,
 }: {
   params: Promise<{ levelId: string }>;
 }) {
   const { levelId } = await params;
-  return <PlayClient levelId={levelId} />;
+  return <DungeonClient levelId={levelId} />;
 }
