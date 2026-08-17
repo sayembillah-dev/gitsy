@@ -37,7 +37,14 @@ const KEYMAP: Record<string, Dir> = {
   D: 'right',
 };
 
-export default function DungeonView({ snapshot }: { snapshot: RepoSnapshot }) {
+export default function DungeonView({
+  snapshot,
+  active,
+}: {
+  snapshot: RepoSnapshot;
+  /** Walking keys are live only in explore mode (D2 modal routing). */
+  active: boolean;
+}) {
   const layout = useMemo(() => layoutGraph(snapshot), [snapshot]);
   const walkNodes = useMemo<WalkNode[]>(
     () => layout.nodes.map((n) => ({ hash: n.hash, lane: n.lane, row: n.row })),
@@ -79,6 +86,7 @@ export default function DungeonView({ snapshot }: { snapshot: RepoSnapshot }) {
   // while the Console is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!active) return;
       const dir = KEYMAP[e.key];
       if (!dir) return;
       e.preventDefault();
@@ -90,7 +98,7 @@ export default function DungeonView({ snapshot }: { snapshot: RepoSnapshot }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [adj, byHash, walkNodes]);
+  }, [active, adj, byHash, walkNodes]);
 
   // Camera: keep the Keeper in the upper third so the plaque and future
   // Door have room below.

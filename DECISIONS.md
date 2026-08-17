@@ -361,3 +361,6 @@ Format: date, what, why.
 - walk.ts holds pure adjacency plus direction picking with 7 unit tests. DungeonView reuses layoutGraph verbatim; GraphNode already carried lane/row/refs/isHead/ghost.  
 - Keeper spawn rule: start at HEAD, follow HEAD only when standing on it, stay put when wandered off.  
 - Gate: tsc clean, 277 tests over 23 files, build 65 static pages plus the dungeon route. Pushed origin main 09ea6dc. Human eyeball leg open: walk an Act 2 floor by hand.  
+  
+## Phases D2-D4 - console, workshop, depths core (2026-08-17)  
+- D2: Console drawer (existing Terminal, real git) with modal key routing: Enter/Space casts, Esc walks, capture phase so xterm cannot swallow Esc. D3: Codex (FileEditor) opened from Satchel file chips colored by FileStatus; goals are seals on the Door strip; undo/reset preserved. D4 core: world reactions ride the existing snapshot pipeline, new chambers forge in, Keeper re-anchors on HEAD moves, ghosts fade; rewrites spectacle and scripted tutorial deferred into D5, which is a human playtest gate. One consolidated branch phase/d2-d4-dungeon under token budget; classic /play still default.  
